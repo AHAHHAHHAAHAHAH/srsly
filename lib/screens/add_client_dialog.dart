@@ -9,96 +9,89 @@ class AddClientDialog extends StatefulWidget {
 }
 
 class _AddClientDialogState extends State<AddClientDialog> {
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _service = ClientService();
 
-  bool _saving = false;
+  final _nameCtrl = TextEditingController();
+  final _numberCtrl = TextEditingController();
+
+  bool _loading = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _numberCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _save() async {
-    if (_saving) return; // 🔒 sicurezza extra
+    final fullName = _nameCtrl.text.trim();
+    final number = _numberCtrl.text.trim();
 
-    final name = _nameController.text.trim();
-    final phone = _phoneController.text.trim();
-
-    if (name.isEmpty) {
-      setState(() => _error = 'Il nome è obbligatorio');
+    if (fullName.isEmpty || number.isEmpty) {
+      setState(() => _error = 'Compila Nome e Numero');
       return;
     }
 
     setState(() {
-      _saving = true;
+      _loading = true;
       _error = null;
     });
 
     try {
-      await _service.addClient(name: name, phone: phone);
+      await _service.addClient(fullName: fullName, number: number);
 
       if (!mounted) return;
-
-      // ✅ QUESTA È LA RIGA CHE SISTEMA TUTTO
-      Navigator.of(context, rootNavigator: true).pop(true);
+      Navigator.pop(context); // ✅ chiude SEMPRE quando salva
     } catch (e) {
-      if (mounted) {
-        setState(() => _error = e.toString());
-      }
-    } finally {
-      // ⚠️ questo non verrà quasi mai eseguito perché pop() chiude il widget
-      // ma lo lasciamo per sicurezza
-      if (mounted) {
-        setState(() => _saving = false);
-      }
+      // ✅ se fallisce NON resta in loop
+      setState(() {
+        _loading = false;
+        _error = 'Errore salvataggio: $e';
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Aggiungi cliente'),
+      title: const Text('Nuovo cliente'),
       content: SizedBox(
-        width: 400,
+        width: 380,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: _nameController,
-              enabled: !_saving,
+              controller: _nameCtrl,
               decoration: const InputDecoration(
-                labelText: 'Nome e cognome',
+                labelText: 'Nome e Cognome',
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             TextField(
-              controller: _phoneController,
-              enabled: !_saving,
+              controller: _numberCtrl,
               decoration: const InputDecoration(
-                labelText: 'Telefono (opzionale)',
+                labelText: 'Numero',
               ),
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.red),
-              ),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
             ],
           ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: _saving
-              ? null
-              : () => Navigator.of(context, rootNavigator: true).pop(),
+          onPressed: _loading ? null : () => Navigator.pop(context),
           child: const Text('Annulla'),
         ),
         ElevatedButton(
-          onPressed: _saving ? null : _save,
-          child: _saving
+          onPressed: _loading ? null : _save,
+          child: _loading
               ? const SizedBox(
-                  width: 16,
-                  height: 16,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Text('Salva'),

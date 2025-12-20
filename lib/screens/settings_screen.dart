@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-
-import 'login_screen.dart';
+import '../core/auth_controller.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -13,69 +11,60 @@ class SettingsScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // TITOLO
           const Text(
             'Impostazioni',
             style: TextStyle(
-              fontSize: 26,
+              fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
           ),
 
           const SizedBox(height: 32),
 
-          // SEZIONE ACCOUNT
-          const Text(
-            'Account',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          Card(
-            elevation: 1,
-            child: ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout'),
-              subtitle: const Text('Esci dall’applicazione'),
-              onTap: () async {
-                // LOGOUT FIREBASE
-                await FirebaseAuth.instance.signOut();
-
-                // TORNA AL LOGIN E PULISCE LO STACK
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(
-                    builder: (_) => const LoginScreen(),
-                  ),
-                  (route) => false,
-                );
+          // ===== LOGOUT BUTTON (DANGER)
+          SizedBox(
+            width: 120,
+            height: 36,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.logout),
+              label: const Text(
+                'Logout',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+                foregroundColor: Colors.white,
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ).copyWith(
+                overlayColor: MaterialStateProperty.resolveWith(
+                  (states) {
+                    if (states.contains(MaterialState.hovered)) {
+                      return Colors.red.shade700.withOpacity(0.15);
+                    }
+                    if (states.contains(MaterialState.pressed)) {
+                      return Colors.red.shade900.withOpacity(0.25);
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              onPressed: () async {
+                await AuthController.instance.logout();
               },
             ),
           ),
 
-          const SizedBox(height: 32),
+          const Spacer(),
 
-          // SEZIONE INFO (pronta per crescere)
           const Text(
-            'Informazioni',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          Card(
-            elevation: 1,
-            child: ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Versione app'),
-              subtitle: const Text('1.0.0'),
-            ),
+            'Versione 1.0.0',
+            style: TextStyle(color: Colors.grey),
           ),
         ],
       ),

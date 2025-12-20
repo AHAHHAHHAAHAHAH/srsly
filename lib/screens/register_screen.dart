@@ -1,34 +1,39 @@
 import 'package:flutter/material.dart';
-import '../core/auth_controller.dart';
-import 'register_screen.dart';
+import '../services/auth_service.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _RegisterScreenState extends State<RegisterScreen> {
   final emailCtrl = TextEditingController();
   final passCtrl = TextEditingController();
+  final companyCtrl = TextEditingController();
 
   bool loading = false;
   String? error;
 
-  Future<void> _login() async {
+  final AuthService auth = AuthService.instance;
+
+  Future<void> _register() async {
     setState(() {
       loading = true;
       error = null;
     });
 
     try {
-      await AuthController.instance.login(
-        emailCtrl.text.trim(),
-        passCtrl.text.trim(),
+      await auth.registerWithCompany(
+        email: emailCtrl.text.trim(),
+        password: passCtrl.text.trim(),
+        companyName: companyCtrl.text.trim(),
       );
+
+      if (mounted) Navigator.pop(context);
     } catch (_) {
-      setState(() => error = 'Credenziali non valide');
+      setState(() => error = 'Errore durante la registrazione');
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -37,18 +42,18 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: const Text('Registrazione')),
       body: Center(
         child: SizedBox(
           width: 360,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Yo what S up man?',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              TextField(
+                controller: companyCtrl,
+                decoration: const InputDecoration(labelText: 'Nome azienda'),
               ),
-              const SizedBox(height: 24),
-
+              const SizedBox(height: 12),
               TextField(
                 controller: emailCtrl,
                 decoration: const InputDecoration(labelText: 'Email'),
@@ -67,26 +72,14 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 12),
 
               ElevatedButton(
-                onPressed: loading ? null : _login,
+                onPressed: loading ? null : _register,
                 child: loading
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Accedi'),
-              ),
-
-              const SizedBox(height: 12),
-
-              TextButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const RegisterScreen()),
-                  );
-                },
-                child: const Text('Non hai un account? Registrati'),
+                    : const Text('Crea account'),
               ),
             ],
           ),

@@ -1,48 +1,63 @@
 import 'package:flutter/material.dart';
-
 import '../screens/home_screen.dart';
+import '../screens/capi_screen.dart';
+import '../screens/orders_screen.dart';
+import '../screens/capi_table_screen.dart';
 import '../screens/settings_screen.dart';
 import 'sidebar.dart';
 
+enum AppSection { home, capi, ordini, tabellaCapi, settings }
+
 class AppShell extends StatefulWidget {
-   AppShell({super.key});
+  const AppShell({super.key});
+
+  static _AppShellState of(BuildContext context) =>
+      context.findAncestorStateOfType<_AppShellState>()!;
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  int selectedIndex = 0;
+  AppSection _section = AppSection.home;
+  String? _activeClientId;
 
-  Widget _buildContent() {
-    switch (selectedIndex) {
-      case 0:
-        return const HomeScreen();
-      case 1:
-        return const Center(child: Text('Clienti (gestione completa - dopo)', style: TextStyle(fontSize: 24)));
-      case 2:
-        return const Center(child: Text('Ordini (dopo)', style: TextStyle(fontSize: 24)));
-      case 3:
-        return const Center(child:Text('Tabella (dopo)', style: TextStyle(fontSize: 24)));
-      case 4:
-        return const SettingsScreen();
-      default:
-        return const Center(child: Text('Sezione non trovata', style: TextStyle(fontSize: 24)));
-    }
+  void goToSection(AppSection section, {String? clientId}) {
+    setState(() {
+      _section = section;
+      if (clientId != null) _activeClientId = clientId;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    Widget body;
+    switch (_section) {
+      case AppSection.home:
+        body = const HomeScreen();
+        break;
+      case AppSection.capi:
+        body = CapiScreen(clientId: _activeClientId);
+        break;
+      case AppSection.ordini:
+        body = OrdersScreen(clientId: _activeClientId);
+        break;
+      case AppSection.tabellaCapi:
+        body = CapiTableScreen(clientId: _activeClientId);
+        break;
+      case AppSection.settings:
+        body = const SettingsScreen();
+        break;
+    }
+
     return Scaffold(
       body: Row(
         children: [
           Sidebar(
-            selectedIndex: selectedIndex,
-            onSelect: (index) {
-              setState(() => selectedIndex = index);
-            },
+            current: _section,
+            onSelect: (s) => goToSection(s),
           ),
-          Expanded(child: _buildContent()),
+          Expanded(child: body),
         ],
       ),
     );

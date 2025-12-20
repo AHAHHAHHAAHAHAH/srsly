@@ -1,17 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CompanyService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final _db = FirebaseFirestore.instance;
+  final String _collection = 'company';
 
-  Future<void> createCompany({
-    required String companyName,
-    required String ownerUid,
-    required String email,
-  }) async {
-    await _db.collection('companies').doc(ownerUid).set({
-      'name': companyName,
-      'email': email,
-      'createdAt': FieldValue.serverTimestamp(),
+  Future<DocumentSnapshot> getCompany() {
+    return _db.collection(_collection).doc('main').get();
+  }
+
+  Future<void> updateCompany(String name) async {
+    await _db.collection(_collection).doc('main').set({
+      'name': name,
+      'updatedAt': Timestamp.now(),
     });
   }
 }

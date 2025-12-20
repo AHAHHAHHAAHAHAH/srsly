@@ -1,34 +1,63 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../core/auth_controller.dart';
 
 class ClientService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  String get _companyId {
+    final id = AuthController.instance.companyId;
+    if (id == null) {
+      throw Exception('CompanyId non inizializzato');
+    }
+    return id;
+  }
+
+  CollectionReference<Map<String, dynamic>> get _col =>
+      _db.collection('clients');
 
   Future<void> addClient({
-    required String name,
-    required String phone,
+    required String fullName,
+    required String number,
   }) async {
-    final user = _auth.currentUser;
+    await _col.add({
+      'companyId': _companyId,
+      'fullName': fullName,
+      'fullNameLower': fullName.toLowerCase(),
+      'number': number,
+      'createdAt': Timestamp.now(),
 
-    if (user == null) {
-      throw Exception('Utente non autenticato');
-    }
-
-    final companyId = user.uid;
-
-    final now = FieldValue.serverTimestamp();
-
-    await _db
-        .collection('companies')
-        .doc(companyId)
-        .collection('clients')
-        .add({
-      'name': name.trim(),
-      'nameLowercase': name.toLowerCase().trim(),
-      'phone': phone.trim(),
-      'createdAt': now,
-      'lastInteractionAt': now,
+      // NOTA: NON lo mettiamo nello storico subito.
+      // lastActivityAt verrà valorizzato quando fai un’operazione reale (ordine/scontrino).
+      'lastActivityAt': null,
+      'lastActivityLabel': null,
     });
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> searchClients(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const Stream.empty();
+
+    return _col
+        .where('companyId', isEqualTo: _companyId)
+        .orderBy('fullNameLower')
+        .startAt([q])
+        .endAt(['$q\uf8ff'])
+        .snapshots();
+  }
+
+  // Storico: SOLO clienti con lastActivityAt valorizzato
+  Stream<QuerySnapshot<Map<String, dynamic>>> getLastServedClients({
+    int limit = 7,
+  }) {
+    return _col
+        .where('companyId', isEqualTo: _companyId)
+        .where('lastActivityAt', isNull: false)
+        .orderBy('lastActivityAt', descending: true)
+        .limit(limit)
+        .snapshots();
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>> getClientById(String id) {
+    return _col.doc(id).get();
   }
 }

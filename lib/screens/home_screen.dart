@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
+import '../services/client_service.dart';
+import '../shell/app_shell.dart';
+import '../shell/app_shell.dart' show AppSection;
 import 'add_client_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -13,77 +13,24 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _searchController = TextEditingController();
+  final ClientService _clientService = ClientService();
+  final TextEditingController _searchCtrl = TextEditingController();
   Timer? _debounce;
-  String _searchText = '';
-
-  String _companyId() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception('Utente non autenticato');
-    return user.uid;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-
-    _searchController.addListener(() {
-      _debounce?.cancel();
-      _debounce = Timer(const Duration(milliseconds: 250), () {
-        setState(() {
-          _searchText = _searchController.text.trim().toLowerCase();
-        });
-      });
-    });
-  }
+  String _query = '';
 
   @override
   void dispose() {
     _debounce?.cancel();
-    _searchController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _searchClients() {
-    if (_searchText.isEmpty) return const Stream.empty();
-
-    return FirebaseFirestore.instance
-        .collection('companies')
-        .doc(_companyId())
-        .collection('clients')
-        .orderBy('nameLowercase')
-        .startAt([_searchText])
-        .endAt(['$_searchText\uf8ff'])
-        .limit(20)
-        .snapshots();
-  }
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _lastSearches() {
-    return FirebaseFirestore.instance
-        .collection('companies')
-        .doc(_companyId())
-        .collection('clients')
-        .orderBy('lastInteractionAt', descending: true)
-        .limit(7)
-        .snapshots();
-  }
-
-  Future<void> _touchClient(String id) async {
-    await FirebaseFirestore.instance
-        .collection('companies')
-        .doc(_companyId())
-        .collection('clients')
-        .doc(id)
-        .update({'lastInteractionAt': FieldValue.serverTimestamp()});
-  }
-
-  String _fmt(dynamic ts) {
-    if (ts is Timestamp) {
-      final d = ts.toDate();
-      return '${d.day.toString().padLeft(2, '0')}/'
-          '${d.month.toString().padLeft(2, '0')}/${d.year}';
-    }
-    return '-';
+  void _onSearch(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _query = value.trim());
+    });
   }
 
   @override
@@ -91,115 +38,213 @@ class _HomeScreenState extends State<HomeScreen> {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Home',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
+          // =========================
+          // BLOCCO SUPERIORE (ALTEZZA FISSA)
+          // =========================
+          Container(
+            height: 420, // 🔥 ALTEZZA FISSA = layout stabile
+            padding: const EdgeInsets.all(18),
+            decoration: _box(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.search, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Ricerca clienti',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
 
-          // ---------- RICERCA ----------
-          const Text('Cerca clienti'),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(),
-              hintText: 'mar → Marco, Martina',
+                const SizedBox(height: 10),
+
+                TextField(
+                  controller: _searchCtrl,
+                  onChanged: _onSearch,
+                  decoration: InputDecoration(
+                    hintText: 'Scrivi nome cliente',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.person_add),
+                  label: const Text('Nuovo cliente'),
+                  onPressed: () async {
+                    await showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => const AddClientDialog(),
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 10),
+
+                // ===== RISULTATI (scroll solo qui)
+                Expanded(
+                  child: _query.isEmpty
+                      ? const SizedBox()
+                      : StreamBuilder(
+                          stream:
+                              _clientService.searchClients(_query),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return Text(
+                                'Errore: ${snapshot.error}',
+                                style:
+                                    const TextStyle(color: Colors.red),
+                              );
+                            }
+
+                            if (!snapshot.hasData) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
+
+                            final docs = snapshot.data!.docs;
+                            if (docs.isEmpty) {
+                              return const Text(
+                                  'Nessun cliente trovato');
+                            }
+
+                            return ListView.builder(
+                              itemCount: docs.length,
+                              itemBuilder: (context, i) {
+                                final c = docs[i].data();
+                                return ListTile(
+                                  title:
+                                      Text(c['fullName'] ?? ''),
+                                  subtitle: Text(
+                                      c['number'] ?? ''),
+                                  onTap: () {
+                                    AppShell.of(context)
+                                        .goToSection(
+                                      AppSection.capi,
+                                      clientId: docs[i].id,
+                                    );
+                                  },
+                                );
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 18),
 
-          // ---------- AGGIUNGI CLIENTE ----------
-          ElevatedButton.icon(
-            icon: const Icon(Icons.person_add),
-            label: const Text('Aggiungi cliente'),
-            onPressed: () async {
-              final created = await showDialog<bool>(
-                context: context,
-                barrierDismissible: false, // ✅ FIX 1
-                builder: (_) => const AddClientDialog(),
-              );
+          // =========================
+          // STORICO CLIENTI (RIEMPIE IL RESTO)
+          // =========================
+          Flexible(
+            fit: FlexFit.loose, // 🔥 NON Expanded
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: _box(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Storico Clienti',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
 
-              if (created == true) {
-                setState(() {});
-              }
-            },
-          ),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: StreamBuilder(
+                      stream: _clientService
+                          .getLastServedClients(limit: 7),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const SizedBox();
+                        }
 
-          const SizedBox(height: 16),
+                        final docs = snapshot.data!.docs;
+                        if (docs.isEmpty) {
+                          return const Text(
+                            'Nessuna operazione recente',
+                            style:
+                                TextStyle(color: Colors.grey),
+                          );
+                        }
 
-          // ---------- RISULTATI RICERCA ----------
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _searchClients(),
-            builder: (context, snapshot) {
-              if (_searchText.isEmpty) {
-                return const Text(
-                  'Inizia a digitare per cercare un cliente',
-                  style: TextStyle(color: Colors.grey),
-                );
-              }
-
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return const Text('Nessun cliente trovato');
-              }
-
-              return Card(
-                child: ListView(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: snapshot.data!.docs.map((doc) {
-                    final d = doc.data();
-                    return ListTile(
-                      title: Text(d['name'] ?? ''),
-                      subtitle: Text(d['phone'] ?? '-'),
-                      onTap: () => _touchClient(doc.id),
-                    );
-                  }).toList(),
-                ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 24),
-          const Divider(thickness: 2),
-          const SizedBox(height: 16),
-
-          // ---------- ULTIME RICERCHE ----------
-          const Text('ULTIME RICERCHE',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _lastSearches(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return const Text('Nessuna ricerca recente');
-              }
-
-              return Card(
-                child: Column(
-                  children: snapshot.data!.docs.map((doc) {
-                    final d = doc.data();
-                    return Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Row(
-                        children: [
-                          Expanded(flex: 3, child: Text(d['name'] ?? '')),
-                          Expanded(flex: 2, child: Text(d['phone'] ?? '-')),
-                          Expanded(flex: 2, child: Text(_fmt(d['lastInteractionAt']))),
-                          const Icon(Icons.receipt_long),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              );
-            },
+                        return ListView.separated(
+                          itemCount: docs.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1),
+                          itemBuilder: (context, i) {
+                            final c = docs[i].data();
+                            return Row(
+                              children: [
+                                Expanded(
+                                    child:
+                                        Text(c['fullName'] ?? '')),
+                                Expanded(
+                                    child:
+                                        Text(c['number'] ?? '')),
+                                Expanded(
+                                    child: Text(
+                                  c['lastActivityLabel'] ?? '',
+                                  style: const TextStyle(
+                                      color: Colors.grey),
+                                )),
+                                TextButton(
+                                  onPressed: () {
+                                    AppShell.of(context)
+                                        .goToSection(
+                                      AppSection.ordini,
+                                      clientId: docs[i].id,
+                                    );
+                                  },
+                                  child:
+                                      const Text('ORDINE'),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
     );
   }
+
+  BoxDecoration _box() => BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withOpacity(0.07)),
+      );
 }
