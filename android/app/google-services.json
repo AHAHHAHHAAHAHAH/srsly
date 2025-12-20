@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "171236072860",
+    "project_id": "smacchiatoria-579ca",
+    "storage_bucket": "smacchiatoria-579ca.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:171236072860:android:7a647189fada906d943c59",
+        "android_client_info": {
+          "package_name": "com.example.forrealeapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCfKCiTaw1WlC6j-TWgnbYMEEYrhSEpe6A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:171236072860:android:621c6554176a3793943c59",
+        "android_client_info": {
+          "package_name": "com.example.srsly_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCfKCiTaw1WlC6j-TWgnbYMEEYrhSEpe6A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
