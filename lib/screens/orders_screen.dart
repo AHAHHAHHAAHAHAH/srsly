@@ -6,11 +6,18 @@ class OrdersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (clientId == null) {
+      return const Center(
+        child: Text(
+          'Seleziona un cliente dalla Home (o dallo Storico) per vedere gli ordini.',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
     return Center(
       child: Text(
-        clientId == null
-            ? 'Seleziona un cliente (Home → click cliente)'
-            : 'Ordini per cliente: $clientId (da implementare)',
+        'Ordini per il cliente selezionato (da implementare)',
         style: const TextStyle(color: Colors.grey),
       ),
     );

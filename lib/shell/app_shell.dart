@@ -20,12 +20,23 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   AppSection _section = AppSection.home;
+
+  /// Cliente “in servizio” (valido solo quando impostato esplicitamente)
   String? _activeClientId;
 
-  void goToSection(AppSection section, {String? clientId}) {
+  /// Navigazione “normale” (sidebar): resetta sempre il cliente attivo.
+  void goToSection(AppSection section) {
     setState(() {
       _section = section;
-      if (clientId != null) _activeClientId = clientId;
+      _activeClientId = null; // ✅ reset contesto cliente
+    });
+  }
+
+  /// Navigazione “con contesto cliente” (click su cliente / storico)
+  void goToSectionForClient(AppSection section, {required String clientId}) {
+    setState(() {
+      _section = section;
+      _activeClientId = clientId; // ✅ set contesto cliente
     });
   }
 
@@ -55,7 +66,7 @@ class _AppShellState extends State<AppShell> {
         children: [
           Sidebar(
             current: _section,
-            onSelect: (s) => goToSection(s),
+            onSelect: goToSection, // ✅ sidebar = reset cliente
           ),
           Expanded(child: body),
         ],

@@ -51,7 +51,6 @@ class Sidebar extends StatelessWidget {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 18),
-
           _item(Icons.home, 'Home', AppSection.home),
           const SizedBox(height: 8),
           _item(Icons.checkroom, 'Capi', AppSection.capi),
@@ -59,9 +58,7 @@ class Sidebar extends StatelessWidget {
           _item(Icons.receipt_long, 'Ordini', AppSection.ordini),
           const SizedBox(height: 8),
           _item(Icons.table_chart, 'Tabella capi', AppSection.tabellaCapi),
-
           const Spacer(),
-
           _item(Icons.settings, 'Impostazioni', AppSection.settings),
         ],
       ),

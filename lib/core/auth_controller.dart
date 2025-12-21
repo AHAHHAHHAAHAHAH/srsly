@@ -1,62 +1,71 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/auth_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthController {
   AuthController._();
   static final AuthController instance = AuthController._();
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final AuthService _authService = AuthService.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   User? _currentUser;
-  User? get currentUser => _currentUser;
-
+  String? _companyId;
   bool _initialized = false;
+
+  final StreamController<User?> _authStateController =
+      StreamController<User?>.broadcast();
+
+  /// ========================
+  /// GETTERS PUBBLICI (SERVONO A TUTTA L’APP)
+  /// ========================
+  User? get currentUser => _currentUser;
+  String? get companyId => _companyId;
   bool get initialized => _initialized;
+  Stream<User?> get authState => _authStateController.stream;
 
-  String? get companyId => _authService.companyId;
-
-  StreamSubscription<User?>? _sub;
-
-  /// Avvia una sola volta il listener globale.
-  /// onChange viene chiamato quando cambia lo stato (login/logout/init).
-  void start(Function onChange) {
-    _sub ??= _auth.authStateChanges().listen((user) async {
-      _initialized = false;
+  /// ========================
+  /// START → chiamato da AuthGate
+  /// ========================
+  Future<void> start() async {
+    _auth.authStateChanges().listen((user) async {
       _currentUser = user;
 
-      // Se logout -> UI deve tornare al login
       if (user == null) {
-        onChange();
+        _companyId = null;
+        _initialized = true;
+        _authStateController.add(null);
         return;
       }
 
-      try {
-        // Carica profilo Firestore (users/{uid}) e companyId
-        await _authService.loadUserProfile();
-        _initialized = true;
-      } catch (_) {
-        // Account senza profilo => lo sloggiamo (coerenza data model)
-        await _auth.signOut();
-        _currentUser = null;
-        _initialized = false;
+      // carica profilo user
+      final snap = await _db.collection('users').doc(user.uid).get();
+      if (snap.exists) {
+        _companyId = snap.data()?['companyId'];
+      } else {
+        _companyId = null;
       }
 
-      onChange();
+      _initialized = true;
+      _authStateController.add(user);
     });
   }
 
+  /// ========================
+  /// LOGIN
+  /// ========================
   Future<void> login(String email, String password) async {
     await _auth.signInWithEmailAndPassword(
       email: email,
       password: password,
     );
+    // il resto lo fa authStateChanges()
   }
 
+  /// ========================
+  /// LOGOUT
+  /// ========================
   Future<void> logout() async {
-    _initialized = false;
-    _currentUser = null;
-    await _authService.logout();
+    await _auth.signOut();
   }
 }

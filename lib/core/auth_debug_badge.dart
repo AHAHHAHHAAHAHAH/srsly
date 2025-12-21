@@ -7,15 +7,18 @@ class AuthDebugBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = AuthController.instance.currentUser;
+
+    if (user == null) return const SizedBox();
+
     return Positioned(
-      bottom: 8,
-      right: 8,
+      bottom: 12,
+      right: 12,
       child: Container(
-        padding: const EdgeInsets.all(6),
-        color: Colors.black54,
+        padding: const EdgeInsets.all(8),
+        color: Colors.black,
         child: Text(
-          user?.email ?? 'NOT LOGGED',
-          style: const TextStyle(color: Colors.white, fontSize: 10),
+          user.email ?? 'no-email',
+          style: const TextStyle(color: Colors.white, fontSize: 12),
         ),
       ),
     );

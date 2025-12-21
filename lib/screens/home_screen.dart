@@ -128,25 +128,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                   'Nessun cliente trovato');
                             }
 
-                            return ListView.builder(
-                              itemCount: docs.length,
-                              itemBuilder: (context, i) {
-                                final c = docs[i].data();
-                                return ListTile(
-                                  title:
-                                      Text(c['fullName'] ?? ''),
-                                  subtitle: Text(
-                                      c['number'] ?? ''),
-                                  onTap: () {
-                                    AppShell.of(context)
-                                        .goToSection(
-                                      AppSection.capi,
-                                      clientId: docs[i].id,
-                                    );
-                                  },
-                                );
-                              },
-                            );
+                        return ListView.builder(
+                        itemCount: docs.length,
+                        itemBuilder: (context, index) {
+                       final doc = docs[index];
+                       final data = doc.data();
+                       return ListTile(
+                       title: Text(data['fullName']),
+                      subtitle: Text(data['number']),
+                       onTap: () {
+                        AppShell.of(context).goToSectionForClient(
+                        AppSection.capi,
+                        clientId: doc.id, 
+                        );
+                       },
+                         );
+                         },
+                        );
+
                           },
                         ),
                 ),
@@ -216,13 +215,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                       color: Colors.grey),
                                 )),
                                 TextButton(
-                                  onPressed: () {
-                                    AppShell.of(context)
-                                        .goToSection(
-                                      AppSection.ordini,
-                                      clientId: docs[i].id,
-                                    );
-                                  },
+                                onPressed: () {
+                                  AppShell.of(context).goToSectionForClient(
+                                    AppSection.ordini,
+                                    clientId: docs[i].id,
+                                  );
+                                },
                                   child:
                                       const Text('ORDINE'),
                                 ),

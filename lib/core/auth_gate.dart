@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'auth_controller.dart';
 import '../screens/login_screen.dart';
 import '../shell/app_shell.dart';
@@ -14,32 +15,26 @@ class _AuthGateState extends State<AuthGate> {
   @override
   void initState() {
     super.initState();
-
-    // Avvio UNICO del listener auth
-    AuthController.instance.start(() {
-      if (mounted) setState(() {});
-    });
+    AuthController.instance.start();
   }
 
   @override
   Widget build(BuildContext context) {
-    final auth = AuthController.instance;
+    return StreamBuilder<User?>(
+      stream: AuthController.instance.authState,
+      builder: (context, snapshot) {
+        if (!AuthController.instance.initialized) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    // 1️⃣ Utente NON loggato
-    if (auth.currentUser == null) {
-      return const LoginScreen();
-    }
+        if (snapshot.data == null) {
+          return const LoginScreen();
+        }
 
-    // 2️⃣ Utente loggato ma profilo non inizializzato
-    if (!auth.initialized) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    // 3️⃣ Utente loggato + companyId caricato
-    return const AppShell();
+        return const AppShell();
+      },
+    );
   }
 }
