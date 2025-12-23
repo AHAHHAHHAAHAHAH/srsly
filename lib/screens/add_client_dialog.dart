@@ -40,16 +40,18 @@ class _AddClientDialogState extends State<AddClientDialog> {
 
     try {
       await _service.addClient(fullName: fullName, number: number);
-
       if (!mounted) return;
-      Navigator.pop(context); // ✅ chiude SEMPRE quando salva
+      Navigator.pop(context);
     } catch (e) {
-      // ✅ se fallisce NON resta in loop
+      if (!mounted) return;
       setState(() {
-        _loading = false;
         _error = 'Errore salvataggio: $e';
+        _loading = false;
       });
+      return;
     }
+
+    if (mounted) setState(() => _loading = false);
   }
 
   @override

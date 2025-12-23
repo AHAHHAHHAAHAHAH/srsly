@@ -40,11 +40,8 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // =========================
-          // BLOCCO SUPERIORE (ALTEZZA FISSA)
-          // =========================
           Container(
-            height: 420, // 🔥 ALTEZZA FISSA = layout stabile
+            height: 420,
             padding: const EdgeInsets.all(18),
             decoration: _box(),
             child: Column(
@@ -63,9 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 10),
-
                 TextField(
                   controller: _searchCtrl,
                   onChanged: _onSearch,
@@ -83,9 +78,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                   ),
                 ),
-
                 const SizedBox(height: 10),
-
                 ElevatedButton.icon(
                   icon: const Icon(Icons.person_add),
                   label: const Text('Nuovo cliente'),
@@ -97,22 +90,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                 ),
-
                 const SizedBox(height: 10),
-
-                // ===== RISULTATI (scroll solo qui)
                 Expanded(
                   child: _query.isEmpty
                       ? const SizedBox()
                       : StreamBuilder(
-                          stream:
-                              _clientService.searchClients(_query),
+                          stream: _clientService.searchClients(_query),
                           builder: (context, snapshot) {
                             if (snapshot.hasError) {
                               return Text(
                                 'Errore: ${snapshot.error}',
-                                style:
-                                    const TextStyle(color: Colors.red),
+                                style: const TextStyle(color: Colors.red),
                               );
                             }
 
@@ -124,42 +112,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
                             final docs = snapshot.data!.docs;
                             if (docs.isEmpty) {
-                              return const Text(
-                                  'Nessun cliente trovato');
+                              return const Text('Nessun cliente trovato');
                             }
 
-                        return ListView.builder(
-                        itemCount: docs.length,
-                        itemBuilder: (context, index) {
-                       final doc = docs[index];
-                       final data = doc.data();
-                       return ListTile(
-                       title: Text(data['fullName']),
-                      subtitle: Text(data['number']),
-                       onTap: () {
-                        AppShell.of(context).goToSectionForClient(
-                        AppSection.capi,
-                        clientId: doc.id, 
-                        );
-                       },
-                         );
-                         },
-                        );
-
+                            return ListView.builder(
+                              itemCount: docs.length,
+                              itemBuilder: (context, index) {
+                                final doc = docs[index];
+                                final data = doc.data();
+                                return ListTile(
+                                  title: Text(data['fullName']),
+                                  subtitle: Text(data['number']),
+                                  onTap: () {
+                                    AppShell.of(context).goToSectionForClient(
+                                      AppSection.capi,
+                                      clientId: doc.id,
+                                    );
+                                  },
+                                );
+                              },
+                            );
                           },
                         ),
                 ),
               ],
             ),
           ),
-
           const SizedBox(height: 18),
-
-          // =========================
-          // STORICO CLIENTI (RIEMPIE IL RESTO)
-          // =========================
           Flexible(
-            fit: FlexFit.loose, // 🔥 NON Expanded
+            fit: FlexFit.loose,
             child: Container(
               padding: const EdgeInsets.all(18),
               decoration: _box(),
@@ -174,12 +155,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-
                   Flexible(
                     fit: FlexFit.loose,
                     child: StreamBuilder(
-                      stream: _clientService
-                          .getLastServedClients(limit: 7),
+                      stream: _clientService.getLastServedClients(limit: 7),
                       builder: (context, snapshot) {
                         if (!snapshot.hasData) {
                           return const SizedBox();
@@ -189,40 +168,33 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (docs.isEmpty) {
                           return const Text(
                             'Nessuna operazione recente',
-                            style:
-                                TextStyle(color: Colors.grey),
+                            style: TextStyle(color: Colors.grey),
                           );
                         }
 
                         return ListView.separated(
                           itemCount: docs.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 1),
+                          separatorBuilder: (_, __) => const Divider(height: 1),
                           itemBuilder: (context, i) {
                             final c = docs[i].data();
                             return Row(
                               children: [
+                                Expanded(child: Text(c['fullName'] ?? '')),
+                                Expanded(child: Text(c['number'] ?? '')),
                                 Expanded(
-                                    child:
-                                        Text(c['fullName'] ?? '')),
-                                Expanded(
-                                    child:
-                                        Text(c['number'] ?? '')),
-                                Expanded(
-                                    child: Text(
-                                  c['lastActivityLabel'] ?? '',
-                                  style: const TextStyle(
-                                      color: Colors.grey),
-                                )),
+                                  child: Text(
+                                    c['lastActivityLabel'] ?? '',
+                                    style: const TextStyle(color: Colors.grey),
+                                  ),
+                                ),
                                 TextButton(
-                                onPressed: () {
-                                  AppShell.of(context).goToSectionForClient(
-                                    AppSection.ordini,
-                                    clientId: docs[i].id,
-                                  );
-                                },
-                                  child:
-                                      const Text('ORDINE'),
+                                  onPressed: () {
+                                    AppShell.of(context).goToSectionForClient(
+                                      AppSection.ordini,
+                                      clientId: docs[i].id,
+                                    );
+                                  },
+                                  child: const Text('ORDINE'),
                                 ),
                               ],
                             );

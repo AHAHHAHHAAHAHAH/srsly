@@ -1,64 +1,69 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../core/auth_controller.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ClientService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  String get _companyId {
-    final cid = AuthController.instance.companyId;
-    if (cid == null) {
-      throw Exception('CompanyId non inizializzato');
+  Future<String> _getCompanyId() async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Utente non autenticato');
+
+    final snap = await _db.collection('users').doc(user.uid).get();
+    if (!snap.exists) throw Exception('Profilo utente non trovato (users/${user.uid})');
+
+    final data = snap.data();
+    final companyId = data?['companyId'];
+    if (companyId == null || companyId is! String || companyId.trim().isEmpty) {
+      throw Exception('companyId mancante su users/${user.uid}');
     }
-    return cid;
+    return companyId;
   }
 
-  /// =========================
-  /// CREA CLIENTE
-  /// =========================
   Future<void> addClient({
     required String fullName,
     required String number,
   }) async {
+    final companyId = await _getCompanyId();
+    final fn = fullName.trim();
+    final num = number.trim();
+
     await _db.collection('clients').add({
-      'fullName': fullName,
-      'number': number,
-      'companyId': _companyId,
+      'companyId': companyId,
+      'fullName': fn,
+      'fullNameLowerCase': fn.toLowerCase(),
+      'number': num,
       'createdAt': FieldValue.serverTimestamp(),
       'lastActivityAt': FieldValue.serverTimestamp(),
+      'lastActivityLabel': 'Creato',
     });
   }
 
-  /// =========================
-  /// CERCA CLIENTI
-  /// =========================
-  Stream<QuerySnapshot<Map<String, dynamic>>> searchClients(String query) {
-    return _db
+  Stream<QuerySnapshot<Map<String, dynamic>>> searchClients(String query) async* {
+    final companyId = await _getCompanyId();
+    final q = query.trim().toLowerCase();
+
+    yield* _db
         .collection('clients')
-        .where('companyId', isEqualTo: _companyId)
-        .orderBy('fullName')
-        .startAt([query])
-        .endAt(['$query\uf8ff'])
+        .where('companyId', isEqualTo: companyId)
+        .orderBy('fullNameLowerCase')
+        .startAt([q])
+        .endAt(['$q\uf8ff'])
         .snapshots();
   }
 
-  /// =========================
-  /// CLIENTI RECENTI (HOME)
-  /// =========================
-  Stream<QuerySnapshot<Map<String, dynamic>>> getLastServedClients({
-    int limit = 10,
-  }) {
-    return _db
+  Stream<QuerySnapshot<Map<String, dynamic>>> getLastServedClients({int limit = 10}) async* {
+    final companyId = await _getCompanyId();
+
+    yield* _db
         .collection('clients')
-        .where('companyId', isEqualTo: _companyId)
+        .where('companyId', isEqualTo: companyId)
         .orderBy('lastActivityAt', descending: true)
         .limit(limit)
         .snapshots();
   }
 
-  /// =========================
-  /// SINGOLO CLIENTE
-  /// =========================
-  Future<DocumentSnapshot<Map<String, dynamic>>> getClientById(String id) {
-    return _db.collection('clients').doc(id).get();
+  Future<DocumentSnapshot<Map<String, dynamic>>> getClientById(String clientId) {
+    return _db.collection('clients').doc(clientId).get();
   }
 }

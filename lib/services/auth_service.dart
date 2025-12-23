@@ -5,55 +5,156 @@ class AuthService {
   AuthService._();
   static final AuthService instance = AuthService._();
 
-  final _auth = FirebaseAuth.instance;
-  final _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  /// LOGIN
-  Future<User> login({
-    required String email,
-    required String password,
-  }) async {
-    final cred = await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
+  User? get currentUser => _auth.currentUser;
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
+
+  Future<void> login(String email, String password) async {
+    await _auth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password.trim(),
     );
 
-    return cred.user!;
+    // dopo login: assicura i doc e i campi richiesti
+    await ensureUserDocForCurrentUser();
   }
 
-  /// REGISTRAZIONE + CREAZIONE USER DOC
-  Future<User> registerWithCompany({
-    required String email,
-    required String password,
-    required String companyName,
-  }) async {
-    // 1️⃣ Crea utente Auth
-    final cred = await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-
-    final user = cred.user!;
-    final uid = user.uid;
-
-    // 2️⃣ Crea companyId (semplice, deterministico)
-    final companyId = _db.collection('companies').doc().id;
-
-    // 3️⃣ Scrive users/{uid}
-    await _db.collection('users').doc(uid).set({
-      'email': email,
-      'companyId': companyId,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    return user;
-  }
-
-  /// LOGOUT
   Future<void> logout() async {
     await _auth.signOut();
   }
 
-  /// STREAM AUTH
-  Stream<User?> authStateChanges() => _auth.authStateChanges();
+  Future<void> registerWithCompany({
+    required String email,
+    required String password,
+    required String companyName,
+  }) async {
+    final e = email.trim();
+    final p = password.trim();
+    final c = companyName.trim();
+
+    if (e.isEmpty || p.isEmpty || c.isEmpty) {
+      throw Exception('Dati registrazione mancanti');
+    }
+
+    final cred = await _auth.createUserWithEmailAndPassword(email: e, password: p);
+    final user = cred.user;
+    if (user == null) throw Exception('Registrazione fallita (user null)');
+
+    final uid = user.uid;
+
+    // scelta stabile: companyId = uid
+    final companyId = uid;
+
+    // users/{uid} COMPLETO come i vecchi
+    await _db.collection('users').doc(uid).set({
+      'email': e,
+      'emailLowerCase': e.toLowerCase(),
+
+      'companyId': companyId,
+      'companyName': c,
+      'companyNameLowerCase': c.toLowerCase(),
+
+      'role': 'admin',
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    // companies/{companyId} con chiave companyName (non "name")
+    await _db.collection('companies').doc(companyId).set({
+      'companyName': c,
+      'companyNameLowerCase': c.toLowerCase(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    // non blocca se fallisce
+    try {
+      await user.updateDisplayName(c);
+    } catch (_) {}
+
+    await ensureUserDocForCurrentUser();
+  }
+
+  Future<String> getCompanyIdForCurrentUser() async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Utente non autenticato');
+
+    final snap = await _db.collection('users').doc(user.uid).get();
+    if (!snap.exists) throw Exception('Profilo utente non trovato');
+
+    final data = snap.data();
+    final companyId = data?['companyId'];
+    if (companyId == null || companyId is! String || companyId.trim().isEmpty) {
+      throw Exception('companyId mancante');
+    }
+    return companyId;
+  }
+
+  Future<void> ensureUserDocForCurrentUser() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final uid = user.uid;
+    final userRef = _db.collection('users').doc(uid);
+
+    final email = (user.email ?? '').trim();
+    final emailLc = email.toLowerCase();
+
+    final snap = await userRef.get();
+
+    // se manca users/{uid}, crealo completo
+    if (!snap.exists) {
+      final fallbackCompanyName = (user.displayName ?? 'Azienda').trim();
+
+      await userRef.set({
+        'email': email,
+        'emailLowerCase': emailLc,
+
+        'companyId': uid,
+        'companyName': fallbackCompanyName,
+        'companyNameLowerCase': fallbackCompanyName.toLowerCase(),
+
+        'role': 'admin',
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await _db.collection('companies').doc(uid).set({
+        'companyName': fallbackCompanyName,
+        'companyNameLowerCase': fallbackCompanyName.toLowerCase(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      return;
+    }
+
+    // patch solo campi mancanti per vecchi utenti incompleti
+    final data = snap.data() ?? {};
+    final Map<String, dynamic> patch = {};
+
+    if (!data.containsKey('email')) patch['email'] = email;
+    if (!data.containsKey('emailLowerCase')) patch['emailLowerCase'] = emailLc;
+
+    if (!data.containsKey('companyId')) patch['companyId'] = uid;
+
+    // se mancano companyName / role, li mettiamo senza distruggere nulla
+    final fallbackCompanyName = (data['companyName'] ?? user.displayName ?? 'Azienda').toString().trim();
+
+    if (!data.containsKey('companyName')) patch['companyName'] = fallbackCompanyName;
+    if (!data.containsKey('companyNameLowerCase')) {
+      patch['companyNameLowerCase'] = fallbackCompanyName.toLowerCase();
+    }
+
+    if (!data.containsKey('role')) patch['role'] = 'admin';
+
+    if (patch.isNotEmpty) {
+      await userRef.set(patch, SetOptions(merge: true));
+    }
+
+    // assicura companies/{uid} con chiavi giuste
+    await _db.collection('companies').doc(uid).set({
+      'companyName': fallbackCompanyName,
+      'companyNameLowerCase': fallbackCompanyName.toLowerCase(),
+      'createdAt': data['createdAt'] ?? FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
 }

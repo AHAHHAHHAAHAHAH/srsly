@@ -1,40 +1,66 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'auth_controller.dart';
+
 import '../screens/login_screen.dart';
 import '../shell/app_shell.dart';
+import 'auth_controller.dart';
+import '../screens/auth_error_screen.dart';
 
-class AuthGate extends StatefulWidget {
+class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
   @override
-  State<AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends State<AuthGate> {
-  @override
-  void initState() {
-    super.initState();
-    AuthController.instance.start();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    // IMPORTANTISSIMO:
+    // - nessun setState qui
+    // - nessuna init "side effect" dentro builder
     return StreamBuilder<User?>(
       stream: AuthController.instance.authState,
-      builder: (context, snapshot) {
-        if (!AuthController.instance.initialized) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+      builder: (context, snap) {
+        // Loading primo aggancio stream
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const _CenterLoading();
         }
 
-        if (snapshot.data == null) {
+        final user = snap.data;
+        if (user == null) {
           return const LoginScreen();
         }
 
-        return const AppShell();
+        // User presente -> inizializzazione profilo (FutureBuilder)
+        // Così NON facciamo nulla durante build dello StreamBuilder.
+        return FutureBuilder<void>(
+          future: AuthController.instance.ensureInitialized(),
+          builder: (context, initSnap) {
+            if (initSnap.connectionState == ConnectionState.waiting) {
+              return const _CenterLoading();
+            }
+
+            if (initSnap.hasError) {
+              final msg = AuthController.instance.lastError ?? initSnap.error.toString();
+
+              return AuthInitErrorScreen(
+                message: msg,
+              );
+            }
+
+            return const AppShell();
+          },
+        );
       },
+    );
+  }
+}
+
+class _CenterLoading extends StatelessWidget {
+  const _CenterLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
     );
   }
 }

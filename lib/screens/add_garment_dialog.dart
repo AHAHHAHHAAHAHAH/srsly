@@ -10,18 +10,33 @@ class AddGarmentDialog extends StatefulWidget {
 
 class _AddGarmentDialogState extends State<AddGarmentDialog> {
   final _nameCtrl = TextEditingController();
-  final _priceCtrl = TextEditingController();
+  final _priceCtrl = TextEditingController(text: '0');
+
   bool _loading = false;
   String? _error;
 
-  final _service = GarmentService();
+  double? _parsePrice(String s) {
+    final v = s.trim().replaceAll(',', '.');
+    return double.tryParse(v);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
-    final price = double.tryParse(_priceCtrl.text.replaceAll(',', '.'));
+    final price = _parsePrice(_priceCtrl.text);
 
-    if (name.isEmpty || price == null || price < 0) {
-      setState(() => _error = 'Dati non validi');
+    if (name.isEmpty) {
+      setState(() => _error = 'Nome mancante');
+      return;
+    }
+    if (price == null || price < 0) {
+      setState(() => _error = 'Prezzo non valido');
       return;
     }
 
@@ -31,13 +46,12 @@ class _AddGarmentDialogState extends State<AddGarmentDialog> {
     });
 
     try {
-      await _service.createGarment(
-        name: name,
-        basePrice: price,
-      );
-      if (mounted) Navigator.of(context).pop(true);
+      await GarmentService().createGarment(name: name, basePrice: price);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (!mounted) return;
+      setState(() => _error = 'Errore salvataggio: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -56,32 +70,26 @@ class _AddGarmentDialogState extends State<AddGarmentDialog> {
               controller: _nameCtrl,
               decoration: const InputDecoration(labelText: 'Nome capo'),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             TextField(
               controller: _priceCtrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(labelText: 'Prezzo base'),
             ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
-            ]
+            const SizedBox(height: 12),
+            if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
           ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: _loading ? null : () => Navigator.pop(context),
+          onPressed: _loading ? null : () => Navigator.of(context).pop(false),
           child: const Text('Annulla'),
         ),
         ElevatedButton(
           onPressed: _loading ? null : _save,
           child: _loading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
               : const Text('Salva'),
         ),
       ],

@@ -2,52 +2,51 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class GarmentService {
-  final _db = FirebaseFirestore.instance;
-  final _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  String get _uid {
-    final u = _auth.currentUser;
-    if (u == null) {
-      throw Exception('Utente non autenticato');
-    }
-    return u.uid;
-  }
+  Future<String> _getCompanyId() async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Utente non autenticato');
 
-  Future<String> _companyId() async {
-    final snap = await _db.collection('users').doc(_uid).get();
+    final snap = await _db.collection('users').doc(user.uid).get();
+    if (!snap.exists) throw Exception('Profilo utente non trovato (users/${user.uid})');
+
     final data = snap.data();
-    if (data == null || data['companyId'] == null) {
-      throw Exception('companyId mancante su users/_uid');
+    final companyId = data?['companyId'];
+    if (companyId == null || companyId is! String || companyId.trim().isEmpty) {
+      throw Exception('companyId mancante su users/${user.uid}');
     }
-    return data['companyId'];
+
+    return companyId;
   }
 
-  /// 🔍 Ricerca capi (immediata, anche 1 lettera)
-  Stream<QuerySnapshot<Map<String, dynamic>>> searchGarments(String query) async* {
-    final companyId = await _companyId();
-
-    yield* _db
-        .collection('garments')
-        .where('companyId', isEqualTo: companyId)
-        .where('nameLower', isGreaterThanOrEqualTo: query.toLowerCase())
-        .where('nameLower', isLessThan: query.toLowerCase() + 'z')
-        .orderBy('nameLower')
-        .snapshots();
-  }
-
-  /// ➕ Crea capo
   Future<void> createGarment({
     required String name,
     required double basePrice,
   }) async {
-    final companyId = await _companyId();
+    final companyId = await _getCompanyId();
+    final n = name.trim();
 
     await _db.collection('garments').add({
-      'name': name,
-      'nameLower': name.toLowerCase(),
-      'basePrice': basePrice,
       'companyId': companyId,
+      'name': n,
+      'nameLowerCase': n.toLowerCase(), // ✅ CAMPO CHIAVE
+      'basePrice': basePrice,
       'createdAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> searchGarments(String query) async* {
+    final companyId = await _getCompanyId();
+    final q = query.trim().toLowerCase();
+
+    yield* _db
+        .collection('garments')
+        .where('companyId', isEqualTo: companyId)
+        .orderBy('nameLowerCase')       // ✅
+        .startAt([q])
+        .endAt(['$q\uf8ff'])
+        .snapshots();
   }
 }
