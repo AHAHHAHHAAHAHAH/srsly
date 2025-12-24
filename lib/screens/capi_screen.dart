@@ -18,6 +18,7 @@ class CapiScreen extends StatefulWidget {
 
 class _CapiScreenState extends State<CapiScreen> {
   final _garmentService = GarmentService();
+  final _clientService = ClientService();
 
   // Search
   final _searchCtrl = TextEditingController();
@@ -29,6 +30,43 @@ class _CapiScreenState extends State<CapiScreen> {
 
   // Cart
   final List<_CartItem> _cart = [];
+
+  // ✅ Drag-scroll state (mouse-only)
+  double _dragStartX = 0;
+  double _dragStartOffset = 0;
+  ScrollController? _dragController;
+
+  // ✅ width fisse (necessarie per scroll orizzontale senza Expanded)
+  static const double _wCapo = 260;
+  static const double _wQty = 140;
+  static const double _wPrezzo = 160;
+  static const double _wTipo = 190;
+  static const double _wRilascio = 220;
+  static const double _wRitiro = 360;
+  static const double _wAddBtn = 120;
+  static const double _wDelBtn = 62;
+
+  static const double _gap = 10;
+  static const double _gapBig = 14;
+
+  double get _rowMinWidth =>
+    _wCapo +
+    _gap +
+    _wQty +
+    _gap +
+    _wPrezzo +
+    _gap +
+    _wTipo +
+    _gap +
+    _wRilascio +
+    _gap +
+    _wRitiro +
+    _gap +
+    _wAddBtn +
+    _gapBig +
+    _wDelBtn +
+    24; // 👈 buffer anti-overflow
+
 
   @override
   void dispose() {
@@ -50,13 +88,32 @@ class _CapiScreenState extends State<CapiScreen> {
 
   int? _parseQty(String s) => int.tryParse(s.trim());
 
-  double? _parsePrice(String s) =>
-      double.tryParse(s.trim().replaceAll(',', '.'));
-
   void _toast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
     );
+  }
+
+  String _fmtDateTime(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString();
+    final hh = d.hour.toString().padLeft(2, '0');
+    final min = d.minute.toString().padLeft(2, '0');
+    return '$dd/$mm/$yyyy · $hh:$min';
+  }
+
+  int _qtyOf(_PendingOp op) {
+    final q = _parseQty(op.qtyCtrl.text);
+    return (q == null || q <= 0) ? 1 : q;
+  }
+
+  double _priceOf(_PendingOp op) {
+    return op.basePrice * _qtyOf(op);
+  }
+
+  DateTime _pickupDateOf(_PendingOp op) {
+    return op.releaseDate.add(Duration(days: op.pickupOffsetDays));
   }
 
   void _addPending({
@@ -64,17 +121,17 @@ class _CapiScreenState extends State<CapiScreen> {
     required String name,
     required double basePrice,
   }) {
-    // Non “sostituisce” niente: aggiunge una riga in verticale
     setState(() {
       _pending.add(
         _PendingOp(
           garmentId: id,
           garmentName: name,
+          basePrice: basePrice,
           qtyCtrl: TextEditingController(text: '1'),
-          priceCtrl: TextEditingController(
-            text: basePrice.toStringAsFixed(2).replaceAll('.', ','),
-          ),
           type: 'Lavaggio',
+          releaseDate: DateTime.now(),
+          pickupOffsetDays: 1,
+          hScrollCtrl: ScrollController(),
         ),
       );
     });
@@ -90,14 +147,14 @@ class _CapiScreenState extends State<CapiScreen> {
   void _addPendingToCart(int index) {
     final op = _pending[index];
 
-    final qty = _parseQty(op.qtyCtrl.text);
-    final price = _parsePrice(op.priceCtrl.text);
+    final qty = _qtyOf(op);
+    final price = _priceOf(op);
 
-    if (qty == null || qty <= 0) {
+    if (qty <= 0) {
       _toast('Quantità non valida');
       return;
     }
-    if (price == null || price < 0) {
+    if (price < 0) {
       _toast('Prezzo non valido');
       return;
     }
@@ -113,7 +170,6 @@ class _CapiScreenState extends State<CapiScreen> {
         ),
       );
 
-      // una volta aggiunto al carrello, puoi anche togliere la riga pending
       op.dispose();
       _pending.removeAt(index);
     });
@@ -235,6 +291,17 @@ class _CapiScreenState extends State<CapiScreen> {
       return;
     }
 
+    if (widget.clientId != null) {
+      try {
+        await _clientService.markClientServed(
+          clientId: widget.clientId!,
+          label: 'Scontrino',
+        );
+      } catch (e) {
+        _toast('Errore aggiornamento storico: $e');
+      }
+    }
+
     setState(() {
       _cart.clear();
       for (final p in _pending) {
@@ -247,8 +314,6 @@ class _CapiScreenState extends State<CapiScreen> {
 
     _toast('Operazione conclusa');
 
-    // Se stai lavorando su un cliente reale, dopo stampa torni Home e resetti il contesto.
-    // Se NON c'è cliente (modalità "a vuoto"), resti qui.
     if (widget.clientId != null) {
       AppShell.of(context).goToSection(AppSection.home);
     }
@@ -267,7 +332,6 @@ class _CapiScreenState extends State<CapiScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ===== header "stai servendo" SOLO se clientId != null
           if (widget.clientId != null)
             FutureBuilder(
               future: ClientService().getClientById(widget.clientId!),
@@ -290,40 +354,30 @@ class _CapiScreenState extends State<CapiScreen> {
                 final fullName = (data['fullName'] ?? '') as String;
                 final number = (data['number'] ?? '') as String;
 
-                return Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Stai servendo:',
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '$fullName — $number',
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
+                  return Padding(
+  padding: const EdgeInsets.only(bottom: 6),
+  child: Row(
+    children: [
+      const Icon(Icons.person, size: 16, color: Colors.grey),
+      const SizedBox(width: 6),
+      Text(
+        '$fullName · $number',
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ],
+  ),
+);
+
               },
             ),
-
           const SizedBox(height: 14),
 
-          // =========================
           // BLOCCO SUPERIORE
-          // =========================
           Container(
-            height: 420,
+            height: 330,
             padding: const EdgeInsets.all(18),
             decoration: _box(),
             child: Column(
@@ -369,17 +423,13 @@ class _CapiScreenState extends State<CapiScreen> {
                           barrierDismissible: false,
                           builder: (_) => const AddGarmentDialog(),
                         );
-                        if (res == true) {
-                          _toast('Capo creato');
-                        }
+                        if (res == true) _toast('Capo creato');
                       },
                     ),
-                    // ✅ TOLTO "Selezionato: ..." come richiesto
                   ],
                 ),
                 const SizedBox(height: 10),
 
-                // Risultati (scroll solo qui)
                 Expanded(
                   child: _query.isEmpty
                       ? const SizedBox()
@@ -397,9 +447,7 @@ class _CapiScreenState extends State<CapiScreen> {
                             }
 
                             final docs = snapshot.data!.docs;
-                            if (docs.isEmpty) {
-                              return const Text('Nessun capo trovato');
-                            }
+                            if (docs.isEmpty) return const Text('Nessun capo trovato');
 
                             return ListView.builder(
                               itemCount: docs.length,
@@ -411,10 +459,7 @@ class _CapiScreenState extends State<CapiScreen> {
 
                                 return ListTile(
                                   title: Text(name),
-                                  subtitle: Text(
-                                    'Prezzo base: € ${basePrice.toStringAsFixed(2)}',
-                                  ),
-                                  // ✅ Ora il tap AGGIUNGE una riga in basso (non sostituisce)
+                                  subtitle: Text('Prezzo base: € ${basePrice.toStringAsFixed(2)}'),
                                   onTap: () => _addPending(
                                     id: doc.id,
                                     name: name,
@@ -432,9 +477,7 @@ class _CapiScreenState extends State<CapiScreen> {
 
           const SizedBox(height: 18),
 
-          // =========================
           // BLOCCO INFERIORE
-          // =========================
           Flexible(
             fit: FlexFit.loose,
             child: Container(
@@ -443,15 +486,12 @@ class _CapiScreenState extends State<CapiScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ✅ tolta la frase "(seleziona un capo sopra)" come richiesto
                   const Text(
                     'Operazioni',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                   ),
-
                   const SizedBox(height: 12),
 
-                  // ✅ Lista verticale + scrollbar se tante
                   Expanded(
                     child: _pending.isEmpty
                         ? const Align(
@@ -466,98 +506,185 @@ class _CapiScreenState extends State<CapiScreen> {
                             separatorBuilder: (_, __) => const SizedBox(height: 10),
                             itemBuilder: (context, i) {
                               final op = _pending[i];
+                              final pickupDate = _pickupDateOf(op);
 
-                              return Row(
-                                children: [
-                                  Expanded(
-                                    flex: 3,
-                                    child: _fieldBox(
-                                      label: 'Capo',
-                                      child: Text(
-                                        op.garmentName,
-                                        style: const TextStyle(fontWeight: FontWeight.w700),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: _fieldBox(
-                                      label: 'Quantità',
-                                      child: TextField(
-                                        controller: op.qtyCtrl,
-                                        keyboardType: TextInputType.number,
-                                        decoration: const InputDecoration(
-                                          border: InputBorder.none,
-                                          isDense: true,
+                              return GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onHorizontalDragStart: (details) {
+                                  _dragController = op.hScrollCtrl;
+                                  _dragStartX = details.localPosition.dx;
+                                  _dragStartOffset =
+                                      op.hScrollCtrl.hasClients ? op.hScrollCtrl.offset : 0;
+                                },
+                                onHorizontalDragUpdate: (details) {
+                                  final ctrl = _dragController;
+                                  if (ctrl == null || !ctrl.hasClients) return;
+
+                                  final dx = details.localPosition.dx - _dragStartX;
+                                  final target = _dragStartOffset - dx;
+
+                                  final min = ctrl.position.minScrollExtent;
+                                  final max = ctrl.position.maxScrollExtent;
+
+                                  ctrl.jumpTo(target.clamp(min, max));
+                                },
+                                onHorizontalDragEnd: (_) {
+                                  _dragController = null;
+                                },
+                                child: SingleChildScrollView(
+                                  controller: op.hScrollCtrl,
+                                  scrollDirection: Axis.horizontal,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  child: SizedBox(
+                                    width: _rowMinWidth,
+                                    child: Row(
+                                      children: [
+                                        SizedBox(
+                                          width: _wCapo,
+                                          child: _fieldBox(
+                                            label: 'Capo',
+                                            child: Text(
+                                              op.garmentName,
+                                              style: const TextStyle(fontWeight: FontWeight.w700),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: _fieldBox(
-                                      label: 'Prezzo',
-                                      child: TextField(
-                                        controller: op.priceCtrl,
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                        decoration: const InputDecoration(
-                                          border: InputBorder.none,
-                                          isDense: true,
+                                        const SizedBox(width: _gap),
+                                        SizedBox(
+                                          width: _wQty,
+                                          child: _fieldBox(
+                                            label: 'Quantità',
+                                            child: TextField(
+                                              controller: op.qtyCtrl,
+                                              keyboardType: TextInputType.number,
+                                              decoration: const InputDecoration(
+                                                border: InputBorder.none,
+                                                isDense: true,
+                                              ),
+                                              onChanged: (_) {
+                                                if (!mounted) return;
+                                                setState(() {});
+                                              },
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: _fieldBox(
-                                      label: 'Tipo',
-                                      child: DropdownButtonHideUnderline(
-                                        child: DropdownButton<String>(
-                                          value: op.type,
-                                          isDense: true,
-                                          items: const [
-                                            DropdownMenuItem(value: 'Lavaggio', child: Text('Lavaggio')),
-                                            DropdownMenuItem(value: 'Stiratura', child: Text('Stiratura')),
-                                            DropdownMenuItem(value: 'Lav+Stiro', child: Text('Lav+Stiro')),
-                                            DropdownMenuItem(value: 'Altro', child: Text('Altro')),
-                                          ],
-                                          onChanged: (v) {
-                                            setState(() => op.type = v ?? 'Lavaggio');
-                                          },
+                                        const SizedBox(width: _gap),
+                                        SizedBox(
+                                          width: _wPrezzo,
+                                          child: _fieldBox(
+                                            label: 'Prezzo',
+                                            child: Text(
+                                              '€ ${_priceOf(op).toStringAsFixed(2)}',
+                                              style: const TextStyle(fontWeight: FontWeight.w800),
+                                            ),
+                                          ),
                                         ),
-                                      ),
+                                        const SizedBox(width: _gap),
+                                        SizedBox(
+                                          width: _wTipo,
+                                          child: _fieldBox(
+                                            label: 'Tipo',
+                                            child: DropdownButtonHideUnderline(
+                                              child: DropdownButton<String>(
+                                                value: op.type,
+                                                isDense: true,
+                                                items: const [
+                                                  DropdownMenuItem(value: 'Lavaggio', child: Text('Lavaggio')),
+                                                  DropdownMenuItem(value: 'Stiratura', child: Text('Stiratura')),
+                                                  DropdownMenuItem(value: 'Lav+Stiro', child: Text('Lav+Stiro')),
+                                                  DropdownMenuItem(value: 'Altro', child: Text('Altro')),
+                                                ],
+                                                onChanged: (v) {
+                                                  setState(() => op.type = v ?? 'Lavaggio');
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: _gap),
+                                        SizedBox(
+                                          width: _wRilascio,
+                                          child: _fieldBox(
+                                            label: 'Rilascio',
+                                            child: Text(
+                                              _fmtDateTime(op.releaseDate),
+                                              style: const TextStyle(fontWeight: FontWeight.w700),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: _gap),
+                                        SizedBox(
+                                          width: _wRitiro,
+                                          child: _fieldBox(
+                                            label: 'Ritiro',
+                                            child: Row(
+                                              children: [
+                                                DropdownButtonHideUnderline(
+                                                  child: DropdownButton<int>(
+                                                    value: op.pickupOffsetDays,
+                                                    isDense: true,
+                                                    items: const [
+                                                      DropdownMenuItem(value: 0, child: Text('Oggi')),
+                                                      DropdownMenuItem(value: 1, child: Text('Domani')),
+                                                      DropdownMenuItem(value: 2, child: Text('+2 giorni')),
+                                                      DropdownMenuItem(value: 3, child: Text('+3 giorni')),
+                                                      DropdownMenuItem(value: 5, child: Text('+5 giorni')),
+                                                      DropdownMenuItem(value: 7, child: Text('+7 giorni')),
+                                                    ],
+                                                    onChanged: (v) {
+                                                      if (v == null) return;
+                                                      setState(() => op.pickupOffsetDays = v);
+                                                    },
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Text(
+                                                    _fmtDateTime(pickupDate),
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(fontWeight: FontWeight.w700),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        SizedBox(
+                                          width: _wAddBtn,
+                                          height: 44,
+                                          child: ElevatedButton(
+                                            onPressed: () => _addPendingToCart(i),
+                                            style: ElevatedButton.styleFrom(
+                                              shape: const StadiumBorder(),
+                                              padding: const EdgeInsets.symmetric(horizontal: 18),
+                                            ),
+                                            child: const Text('Aggiungi'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: _gapBig),
+                                        SizedBox(
+                                          width: _wDelBtn,
+                                          height: 44,
+                                          child: OutlinedButton(
+                                            onPressed: () => _removePendingAt(i),
+                                            style: OutlinedButton.styleFrom(
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              side: BorderSide(
+                                                color: Colors.red.withOpacity(0.35),
+                                              ),
+                                            ),
+                                            child: const Icon(Icons.delete, color: Colors.red),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-
-                                  // ✅ Aggiungi pill (per riga)
-                                  SizedBox(
-                                    height: 44,
-                                    child: ElevatedButton(
-                                      onPressed: () => _addPendingToCart(i),
-                                      style: ElevatedButton.styleFrom(
-                                        shape: const StadiumBorder(),
-                                        padding: const EdgeInsets.symmetric(horizontal: 18),
-                                      ),
-                                      child: const Text('Aggiungi'),
-                                    ),
-                                  ),
-
-                                  const SizedBox(width: 14),
-
-                                  // ✅ delete X (per riga)
-                                  SizedBox(
-                                    height: 44,
-                                    width: 52,
-                                    child: OutlinedButton(
-                                      onPressed: () => _removePendingAt(i),
-                                      style: OutlinedButton.styleFrom(
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                      child: const Icon(Icons.close),
-                                    ),
-                                  ),
-                                ],
+                                ),
                               );
                             },
                           ),
@@ -565,7 +692,6 @@ class _CapiScreenState extends State<CapiScreen> {
 
                   const SizedBox(height: 12),
 
-                  // bottom actions: carrello + stampa
                   Row(
                     children: [
                       OutlinedButton.icon(
@@ -634,21 +760,34 @@ class _CapiScreenState extends State<CapiScreen> {
 class _PendingOp {
   final String garmentId;
   final String garmentName;
+
+  // ✅ prezzo base per calcolo dinamico
+  final double basePrice;
+
   final TextEditingController qtyCtrl;
-  final TextEditingController priceCtrl;
+
   String type;
+
+  final DateTime releaseDate;
+  int pickupOffsetDays;
+
+  // ✅ controller scroll orizzontale per questa riga
+  final ScrollController hScrollCtrl;
 
   _PendingOp({
     required this.garmentId,
     required this.garmentName,
+    required this.basePrice,
     required this.qtyCtrl,
-    required this.priceCtrl,
     required this.type,
+    required this.releaseDate,
+    required this.pickupOffsetDays,
+    required this.hScrollCtrl,
   });
 
   void dispose() {
     qtyCtrl.dispose();
-    priceCtrl.dispose();
+    hScrollCtrl.dispose();
   }
 }
 
