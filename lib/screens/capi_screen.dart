@@ -37,17 +37,17 @@ class _CapiScreenState extends State<CapiScreen> {
   ScrollController? _dragController;
 
   // ✅ width fisse (necessarie per scroll orizzontale senza Expanded)
-  static const double _wCapo = 260;
-  static const double _wQty = 140;
-  static const double _wPrezzo = 160;
-  static const double _wTipo = 190;
-  static const double _wRilascio = 220;
-  static const double _wRitiro = 360;
+  static const double _wCapo = 190;
+  static const double _wQty = 100;
+  static const double _wPrezzo = 120;
+  static const double _wTipo = 160;
+  static const double _wRilascio = 180;
+  static const double _wRitiro = 190;
   static const double _wAddBtn = 120;
   static const double _wDelBtn = 62;
 
   static const double _gap = 10;
-  static const double _gapBig = 14;
+  static const double _gapBig = 8;
 
   double get _rowMinWidth =>
     _wCapo +
@@ -87,6 +87,13 @@ class _CapiScreenState extends State<CapiScreen> {
   }
 
   int? _parseQty(String s) => int.tryParse(s.trim());
+    double? _parseEuro(String s) {
+    final t = s.trim().replaceAll('€', '').replaceAll(' ', '').replaceAll(',', '.');
+    return double.tryParse(t);
+  }
+
+String _fmtEuro(double v) => '€ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
+
 
   void _toast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -103,37 +110,83 @@ class _CapiScreenState extends State<CapiScreen> {
     return '$dd/$mm/$yyyy · $hh:$min';
   }
 
+  String _fmtDate(DateTime d) {
+  final dd = d.day.toString().padLeft(2, '0');
+  final mm = d.month.toString().padLeft(2, '0');
+  final yyyy = d.year.toString();
+  return '$dd/$mm/$yyyy';
+}
+
+Widget _pickupChip(_PendingOp op, String value) {
+  final selected = op.pickupSlot == value;
+
+  return InkWell(
+    onTap: () {
+      setState(() {
+        op.pickupSlot = value;
+      });
+    },
+    borderRadius: BorderRadius.circular(20),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: selected ? Colors.black : Colors.black.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        value,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: selected ? Colors.white : Colors.black87,
+        ),
+      ),
+    ),
+  );
+}
+
+
+
   int _qtyOf(_PendingOp op) {
     final q = _parseQty(op.qtyCtrl.text);
     return (q == null || q <= 0) ? 1 : q;
   }
 
   double _priceOf(_PendingOp op) {
-    return op.basePrice * _qtyOf(op);
+    if (op.priceManuallyEdited) {
+        final v = _parseEuro(op.priceCtrl.text);
+        return v ?? (op.basePrice * _qtyOf(op));
   }
+  // altrimenti prezzo automatico = basePrice * qty
+  return op.basePrice * _qtyOf(op);  }
 
-  DateTime _pickupDateOf(_PendingOp op) {
-    return op.releaseDate.add(Duration(days: op.pickupOffsetDays));
-  }
-
+ 
+   
   void _addPending({
     required String id,
     required String name,
     required double basePrice,
+
   }) {
     setState(() {
-      _pending.add(
-        _PendingOp(
-          garmentId: id,
-          garmentName: name,
-          basePrice: basePrice,
-          qtyCtrl: TextEditingController(text: '1'),
-          type: 'Lavaggio',
-          releaseDate: DateTime.now(),
-          pickupOffsetDays: 1,
-          hScrollCtrl: ScrollController(),
-        ),
-      );
+     _pending.add(
+    _PendingOp(
+      garmentId: id,
+      garmentName: name,
+      basePrice: basePrice,
+      qtyCtrl: TextEditingController(text: '1'),
+      priceCtrl: TextEditingController(
+        text: _fmtEuro(basePrice),
+      ),
+      priceManuallyEdited: false,
+      type: 'Lavaggio',
+      releaseDate: DateTime.now(),
+      pickupDate: DateTime.now().add(const Duration(days: 1)),
+      pickupSlot: 'Mattina', 
+      hScrollCtrl: ScrollController(),
+    ),
+);
+
     });
   }
 
@@ -160,15 +213,19 @@ class _CapiScreenState extends State<CapiScreen> {
     }
 
     setState(() {
-      _cart.add(
-        _CartItem(
-          garmentId: op.garmentId,
-          garmentName: op.garmentName,
-          qty: qty,
-          price: price,
-          type: op.type,
-        ),
-      );
+    _cart.add(
+      _CartItem(
+        garmentId: op.garmentId,
+        garmentName: op.garmentName,
+        qty: qty,
+        price: price,
+        type: op.type,
+        releaseDate: op.releaseDate,
+        pickupDate: op.pickupDate,
+        pickupSlot: op.pickupSlot,
+      ),
+    );
+
 
       op.dispose();
       _pending.removeAt(index);
@@ -181,108 +238,125 @@ class _CapiScreenState extends State<CapiScreen> {
 
   Future<void> _openCart() async {
     await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.shopping_cart_outlined),
-            const SizedBox(width: 10),
-            Text('Carrello (${_cart.length})'),
-          ],
-        ),
-        content: SizedBox(
-          width: 680,
-          child: _cart.isEmpty
-              ? const Text('Carrello vuoto')
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: const [
-                          Expanded(
-                            flex: 3,
-                            child: Text(
-                              'Capo',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              'Qtà',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              'Prezzo',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              'Tipo',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 260,
-                      child: ListView.separated(
-                        itemCount: _cart.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, i) {
-                          final it = _cart[i];
-                          return Row(
-                            children: [
-                              Expanded(flex: 3, child: Text(it.garmentName)),
-                              Expanded(child: Text('${it.qty}')),
-                              Expanded(
-                                child: Text(it.price.toStringAsFixed(2)),
-                              ),
-                              Expanded(child: Text(it.type)),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        'Totale: € ${_total.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
+  context: context,
+  builder: (context) {
+    return StatefulBuilder(
+      builder: (context, setDialogState) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.shopping_cart_outlined),
+              const SizedBox(width: 10),
+              Text('Carrello (${_cart.length})'),
+            ],
+          ),
+          content: SizedBox(
+            width: 680,
+            child: _cart.isEmpty
+                ? const Text('Carrello vuoto')
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // HEADER
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: const [
+                            Expanded(flex: 3, child: Text('Capo', style: TextStyle(fontWeight: FontWeight.w700))),
+                            Expanded(flex: 1, child: Text('Qtà', style: TextStyle(fontWeight: FontWeight.w700))),
+                            Expanded(flex: 2, child: Text('Prezzo', style: TextStyle(fontWeight: FontWeight.w700))),
+                            Expanded(flex: 2, child: Text('Tipo', style: TextStyle(fontWeight: FontWeight.w700))),
+                            Expanded(flex: 2, child: Text('Rilascio', style: TextStyle(fontWeight: FontWeight.w700))),
+                            Expanded(flex: 3, child: Text('Ritiro', style: TextStyle(fontWeight: FontWeight.w700))),
+                            SizedBox(width: 40),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Chiudi'),
+                      const Divider(height: 1),
+                      const SizedBox(height: 8),
+
+                      // LISTA
+                      SizedBox(
+                        height: 260,
+                        child: ListView.separated(
+                          itemCount: _cart.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, i) {
+                            final it = _cart[i];
+                            return Row(
+                              children: [
+                                Expanded(flex: 3, child: Text(it.garmentName)),
+                                Expanded(flex: 1, child: Text('${it.qty}')),
+                                Expanded(flex: 2, child: Text('€ ${it.price.toStringAsFixed(2)}')),
+                                Expanded(flex: 2, child: Text(it.type)),
+                                Expanded(flex: 2, child: Text(_fmtDate(it.releaseDate))),
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(
+                                    '${_fmtDate(it.pickupDate)} · ${it.pickupSlot}',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        _cart.removeAt(i);
+                                      });
+                                      setState(() {});
+                                    },
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // TOTALE
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          'Totale: € ${_total.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
           ),
-          TextButton(
-            onPressed: _cart.isEmpty
-                ? null
-                : () {
-                    setState(() => _cart.clear());
-                    Navigator.of(context).pop();
-                    _toast('Carrello svuotato');
-                  },
-            child: const Text('Svuota'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Chiudi'),
+            ),
+            TextButton(
+              onPressed: _cart.isEmpty
+                  ? null
+                  : () {
+                      setDialogState(() {
+                        _cart.clear();
+                      });
+                      setState(() {});
+                      Navigator.of(context).pop();
+                      _toast('Carrello svuotato');
+                    },
+              child: const Text('Svuota'),
+            ),
+          ],
+        );
+      },
     );
+  },
+);
+
   }
 
   Future<void> _printAndClose() async {
@@ -458,7 +532,7 @@ class _CapiScreenState extends State<CapiScreen> {
                                 final basePrice = (d['basePrice'] ?? 0).toDouble();
 
                                 return ListTile(
-                                  title: Text(name),
+                                  title: Text(name,style: const TextStyle(fontWeight: FontWeight.w800),),                                
                                   subtitle: Text('Prezzo base: € ${basePrice.toStringAsFixed(2)}'),
                                   onTap: () => _addPending(
                                     id: doc.id,
@@ -506,7 +580,7 @@ class _CapiScreenState extends State<CapiScreen> {
                             separatorBuilder: (_, __) => const SizedBox(height: 10),
                             itemBuilder: (context, i) {
                               final op = _pending[i];
-                              final pickupDate = _pickupDateOf(op);
+                              final pickupDate = op.pickupDate;
 
                               return GestureDetector(
                                 behavior: HitTestBehavior.translucent,
@@ -559,26 +633,45 @@ class _CapiScreenState extends State<CapiScreen> {
                                               controller: op.qtyCtrl,
                                               keyboardType: TextInputType.number,
                                               decoration: const InputDecoration(
-                                                border: InputBorder.none,
-                                                isDense: true,
-                                              ),
-                                              onChanged: (_) {
-                                                if (!mounted) return;
-                                                setState(() {});
-                                              },
+                                              border: InputBorder.none,
+                                              isDense: true,
+                                              contentPadding: EdgeInsets.zero, 
+                                            ),
+                                           onChanged: (_) {
+                                              if (!mounted) return;
+
+                                              // se NON è stato modificato a mano, aggiorniamo il prezzo automaticamente
+                                              if (!op.priceManuallyEdited) {
+                                                final auto = op.basePrice * _qtyOf(op);
+                                                op.priceCtrl.text = _fmtEuro(auto);
+                                              }
+
+                                              setState(() {});
+                                            },
                                             ),
                                           ),
                                         ),
                                         const SizedBox(width: _gap),
                                         SizedBox(
-                                          width: _wPrezzo,
-                                          child: _fieldBox(
-                                            label: 'Prezzo',
-                                            child: Text(
-                                              '€ ${_priceOf(op).toStringAsFixed(2)}',
-                                              style: const TextStyle(fontWeight: FontWeight.w800),
-                                            ),
-                                          ),
+                                            width: _wPrezzo,
+                                            child: _fieldBox(
+                                              label: 'Prezzo',
+                                       child: TextField(
+                                        controller: op.priceCtrl,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        decoration: const InputDecoration(
+                                          border: InputBorder.none,
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                        
+                                        onChanged: (_) {
+                                          if (!mounted) return;
+                                          op.priceManuallyEdited = true;
+                                          setState(() {});
+                                        },
+                                      ),
+                                        ),
                                         ),
                                         const SizedBox(width: _gap),
                                         SizedBox(
@@ -586,18 +679,20 @@ class _CapiScreenState extends State<CapiScreen> {
                                           child: _fieldBox(
                                             label: 'Tipo',
                                             child: DropdownButtonHideUnderline(
-                                              child: DropdownButton<String>(
-                                                value: op.type,
-                                                isDense: true,
-                                                items: const [
-                                                  DropdownMenuItem(value: 'Lavaggio', child: Text('Lavaggio')),
-                                                  DropdownMenuItem(value: 'Stiratura', child: Text('Stiratura')),
-                                                  DropdownMenuItem(value: 'Lav+Stiro', child: Text('Lav+Stiro')),
-                                                  DropdownMenuItem(value: 'Altro', child: Text('Altro')),
-                                                ],
-                                                onChanged: (v) {
-                                                  setState(() => op.type = v ?? 'Lavaggio');
-                                                },
+                                              child: SizedBox(
+                                                height: 24, // 🔒 altezza fissa = niente espansione verticale
+                                                child: DropdownButton<String>(
+                                                  value: op.type,
+                                                  items: const [
+                                                    DropdownMenuItem(value: 'Lavaggio', child: Text('Lavaggio')),
+                                                    DropdownMenuItem(value: 'Stiratura', child: Text('Stiratura')),
+                                                    DropdownMenuItem(value: 'Lav+Stiro', child: Text('Lav+Stiro')),
+                                                    DropdownMenuItem(value: 'Altro', child: Text('Altro')),
+                                                  ],
+                                                  onChanged: (v) {
+                                                    setState(() => op.type = v ?? 'Lavaggio');
+                                                  },
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -615,42 +710,69 @@ class _CapiScreenState extends State<CapiScreen> {
                                           ),
                                         ),
                                         const SizedBox(width: _gap),
-                                        SizedBox(
-                                          width: _wRitiro,
-                                          child: _fieldBox(
-                                            label: 'Ritiro',
-                                            child: Row(
-                                              children: [
-                                                DropdownButtonHideUnderline(
-                                                  child: DropdownButton<int>(
-                                                    value: op.pickupOffsetDays,
-                                                    isDense: true,
-                                                    items: const [
-                                                      DropdownMenuItem(value: 0, child: Text('Oggi')),
-                                                      DropdownMenuItem(value: 1, child: Text('Domani')),
-                                                      DropdownMenuItem(value: 2, child: Text('+2 giorni')),
-                                                      DropdownMenuItem(value: 3, child: Text('+3 giorni')),
-                                                      DropdownMenuItem(value: 5, child: Text('+5 giorni')),
-                                                      DropdownMenuItem(value: 7, child: Text('+7 giorni')),
-                                                    ],
-                                                    onChanged: (v) {
-                                                      if (v == null) return;
-                                                      setState(() => op.pickupOffsetDays = v);
+                                     
+                                          SizedBox(
+                                            width: _wRitiro,
+                                            child: _fieldBox(
+                                              label: 'Ritiro',
+                                              child: Row(
+                                                children: [
+                                                  // icona calendario
+                                                  InkWell(
+                                                    onTap: () async {
+                                                      final picked = await showDatePicker(
+                                                        context: context,
+                                                        initialDate: op.pickupDate,
+                                                        firstDate: DateTime.now(),
+                                                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                                                      );
+                                                      if (picked == null) return;
+
+                                                      setState(() {
+                                                        op.pickupDate = DateTime(
+                                                          picked.year,
+                                                          picked.month,
+                                                          picked.day,
+                                                        );
+                                                      });
                                                     },
+                                                    child: Icon(
+                                                      Icons.calendar_month,
+                                                      size: 20,
+                                                      color: Colors.grey.shade700,
+                                                    ),
                                                   ),
-                                                ),
-                                                const SizedBox(width: 10),
-                                                Expanded(
-                                                  child: Text(
-                                                    _fmtDateTime(pickupDate),
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: const TextStyle(fontWeight: FontWeight.w700),
+
+                                                  const SizedBox(width: 10),
+
+                                                  Expanded(
+                                                    child: DropdownButtonHideUnderline(
+                                                      child: DropdownButton<String>(
+                                                        value: op.pickupSlot,
+                                                        isDense: true,
+                                                        items: const [
+                                                          DropdownMenuItem(
+                                                            value: 'Mattina',
+                                                            child: Text('Mattina'),
+                                                          ),
+                                                          DropdownMenuItem(
+                                                            value: 'Pomeriggio',
+                                                            child: Text('Pomeriggio'),
+                                                          ),
+                                                        ],
+                                                        onChanged: (v) {
+                                                          if (v == null) return;
+                                                          setState(() => op.pickupSlot = v);
+                                                        },
+                                                      ),
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
                                           ),
-                                        ),
+
+
                                         const SizedBox(width: 12),
                                         SizedBox(
                                           width: _wAddBtn,
@@ -729,49 +851,60 @@ class _CapiScreenState extends State<CapiScreen> {
     );
   }
 
-  Widget _fieldBox({required String label, required Widget child}) {
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black.withOpacity(0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.grey.shade700,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
+ Widget _fieldBox({required String label, required Widget child}) {
+  return Container(
+    padding: const EdgeInsets.fromLTRB(12, 8, 12, 10), // ⬅ padding calibrato
+    decoration: BoxDecoration(
+      color: Colors.black.withOpacity(0.03),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.black.withOpacity(0.08)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min, // ⭐ CHIAVE
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey.shade700,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            height: 1.1, // ⬅ evita overflow del label
           ),
-          const SizedBox(height: 4),
-          Expanded(child: Align(alignment: Alignment.centerLeft, child: child)),
-        ],
-      ),
-    );
-  }
+        ),
+        const SizedBox(height: 4),
+        child,
+      ],
+    ),
+  );
+}
+
+
 }
 
 class _PendingOp {
   final String garmentId;
   final String garmentName;
 
-  // ✅ prezzo base per calcolo dinamico
+  DateTime pickupDate;
+  String pickupSlot;
+
+  // prezzo base del capo (listino)
   final double basePrice;
 
+  // input modificabili
   final TextEditingController qtyCtrl;
+  final TextEditingController priceCtrl;
+
+  // se true: l’utente ha modificato il prezzo a mano
+  bool priceManuallyEdited;
 
   String type;
 
   final DateTime releaseDate;
-  int pickupOffsetDays;
 
-  // ✅ controller scroll orizzontale per questa riga
+ 
+
   final ScrollController hScrollCtrl;
 
   _PendingOp({
@@ -779,17 +912,22 @@ class _PendingOp {
     required this.garmentName,
     required this.basePrice,
     required this.qtyCtrl,
+    required this.priceCtrl,
+    required this.priceManuallyEdited,
     required this.type,
     required this.releaseDate,
-    required this.pickupOffsetDays,
+    required this.pickupDate,
     required this.hScrollCtrl,
+    required this.pickupSlot,
   });
 
   void dispose() {
     qtyCtrl.dispose();
+    priceCtrl.dispose();
     hScrollCtrl.dispose();
   }
 }
+
 
 class _CartItem {
   final String garmentId;
@@ -797,6 +935,9 @@ class _CartItem {
   final int qty;
   final double price;
   final String type;
+  final DateTime releaseDate;
+  final DateTime pickupDate;
+  final String pickupSlot;
 
   _CartItem({
     required this.garmentId,
@@ -804,5 +945,9 @@ class _CartItem {
     required this.qty,
     required this.price,
     required this.type,
+    required this.releaseDate,
+    required this.pickupDate,
+    required this.pickupSlot,
   });
 }
+
