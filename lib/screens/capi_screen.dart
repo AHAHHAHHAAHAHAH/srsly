@@ -5,6 +5,8 @@ import '../services/garment_service.dart';
 import '../shell/app_shell.dart';
 import '../shell/app_shell.dart' show AppSection;
 import 'add_garment_dialog.dart';
+import '../services/operation_type_service.dart';
+import 'add_operation_for_garment_dialog.dart';
 
 class CapiScreen extends StatefulWidget {
   final String? clientId;
@@ -19,6 +21,14 @@ class CapiScreen extends StatefulWidget {
 class _CapiScreenState extends State<CapiScreen> {
   final _garmentService = GarmentService();
   final _clientService = ClientService();
+
+
+final _typeService = OperationTypeService();
+
+
+
+List<Map<String, String>> _operationTypes = [];
+bool _typesLoaded = false;
 
   // Search
   final _searchCtrl = TextEditingController();
@@ -68,6 +78,56 @@ class _CapiScreenState extends State<CapiScreen> {
     24; // 👈 buffer anti-overflow
 
 
+    @override
+void initState() {
+  super.initState();
+  _loadTypes();
+}
+
+Future<void> _loadTypes() async {
+  final snap = await _typeService.streamTypes().first;
+  _operationTypes = snap.docs
+      .map((d) => {
+            'id': d.id,
+            'name': d['name'] as String,
+          })
+      .toList();
+
+  setState(() => _typesLoaded = true);
+}
+
+
+    Future<void> _loadOperationTypes() async {
+      final snap = await _typeService.streamTypes().first;
+
+      setState(() {
+        _operationTypes = snap.docs
+            .map((d) => {
+                  'id': d.id,
+                  'name': d['name'] as String,
+                })
+            .toList();
+        _typesLoaded = true;
+      });
+    }
+
+Future<void> _onTypeSelected(_PendingOp op, String typeId) async {
+  final prices =
+      await _garmentService.getPricesForGarment(op.garmentId);
+
+  final price = prices[typeId] ?? 0;
+
+  if (!mounted) return;
+
+  setState(() {
+    op.typeId = typeId;
+    op.typeName = _operationTypes
+        .firstWhere((t) => t['id'] == typeId)['name']!;
+    op.priceManuallyEdited = false;
+    op.priceCtrl.text = _fmtEuro(price);
+  });
+}
+ 
   @override
   void dispose() {
     _debounce?.cancel();
@@ -155,10 +215,10 @@ Widget _pickupChip(_PendingOp op, String value) {
   double _priceOf(_PendingOp op) {
     if (op.priceManuallyEdited) {
         final v = _parseEuro(op.priceCtrl.text);
-        return v ?? (op.basePrice * _qtyOf(op));
+        return v ?? (op.unitPrice * _qtyOf(op));
   }
   // altrimenti prezzo automatico = basePrice * qty
-  return op.basePrice * _qtyOf(op);  }
+  return op.unitPrice * _qtyOf(op);  }
 
  
    
@@ -169,23 +229,24 @@ Widget _pickupChip(_PendingOp op, String value) {
 
   }) {
     setState(() {
-     _pending.add(
-    _PendingOp(
-      garmentId: id,
-      garmentName: name,
-      basePrice: basePrice,
-      qtyCtrl: TextEditingController(text: '1'),
-      priceCtrl: TextEditingController(
-        text: _fmtEuro(basePrice),
+    _pending.add(
+      _PendingOp(
+        garmentId: id,
+        garmentName: name,
+        unitPrice: basePrice,
+        currentQty: 1,
+        qtyCtrl: TextEditingController(text: '1'),
+        priceCtrl: TextEditingController(text: _fmtEuro(basePrice * 1)),
+        priceManuallyEdited: false,
+        typeId: null,
+        typeName: '',
+        releaseDate: DateTime.now(),
+        pickupDate: DateTime.now().add(const Duration(days: 1)),
+        pickupSlot: 'Mattina',
+        hScrollCtrl: ScrollController(),
       ),
-      priceManuallyEdited: false,
-      type: 'Lavaggio',
-      releaseDate: DateTime.now(),
-      pickupDate: DateTime.now().add(const Duration(days: 1)),
-      pickupSlot: 'Mattina', 
-      hScrollCtrl: ScrollController(),
-    ),
-);
+    );
+
 
     });
   }
@@ -199,6 +260,11 @@ Widget _pickupChip(_PendingOp op, String value) {
 
   void _addPendingToCart(int index) {
     final op = _pending[index];
+    if (op.typeId == null) {
+     _toast('Seleziona un tipo');
+      return;
+    }
+
 
     final qty = _qtyOf(op);
     final price = _priceOf(op);
@@ -219,7 +285,7 @@ Widget _pickupChip(_PendingOp op, String value) {
         garmentName: op.garmentName,
         qty: qty,
         price: price,
-        type: op.type,
+        type: op.typeName,
         releaseDate: op.releaseDate,
         pickupDate: op.pickupDate,
         pickupSlot: op.pickupSlot,
@@ -239,6 +305,7 @@ Widget _pickupChip(_PendingOp op, String value) {
   Future<void> _openCart() async {
     await showDialog(
   context: context,
+    barrierDismissible: false,
   builder: (context) {
     return StatefulBuilder(
       builder: (context, setDialogState) {
@@ -491,18 +558,16 @@ Widget _pickupChip(_PendingOp op, String value) {
                     ElevatedButton.icon(
                       icon: const Icon(Icons.add),
                       label: const Text('Nuovo capo'),
-                      onPressed: () async {
-                        final res = await showDialog<bool>(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (_) => const AddGarmentDialog(),
-                        );
-                        if (res == true) _toast('Capo creato');
-                      },
+                     onPressed: () async {
+                      final res = await AddGarmentDialog.open(context);
+                      if (res == true) {
+                        _toast('Salvato correttamente');
+                      }
+                    },
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 10), 
 
                 Expanded(
                   child: _query.isEmpty
@@ -529,17 +594,35 @@ Widget _pickupChip(_PendingOp op, String value) {
                                 final doc = docs[i];
                                 final d = doc.data();
                                 final name = (d['name'] ?? '') as String;
-                                final basePrice = (d['basePrice'] ?? 0).toDouble();
 
-                                return ListTile(
-                                  title: Text(name,style: const TextStyle(fontWeight: FontWeight.w800),),                                
-                                  subtitle: Text('Prezzo base: € ${basePrice.toStringAsFixed(2)}'),
+                               return ListTile(
+                                  title: Text(
+                                    name,
+                                    style: const TextStyle(fontWeight: FontWeight.w800),
+                                  ),
+
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.add_circle_outline),
+                                    tooltip: 'Aggiungi operazione',
+                                    onPressed: () async {
+                                      final res = await AddOperationForGarmentDialog.open(
+                                        context,
+                                        garmentId: doc.id,
+                                        garmentName: name,
+                                      );
+                                      if (res == true) {
+                                        _toast('Operazione salvata');
+                                      }
+                                    },
+                                  ),
+
                                   onTap: () => _addPending(
                                     id: doc.id,
                                     name: name,
-                                    basePrice: basePrice,
+                                    basePrice: 0,
                                   ),
                                 );
+
                               },
                             );
                           },
@@ -637,17 +720,35 @@ Widget _pickupChip(_PendingOp op, String value) {
                                               isDense: true,
                                               contentPadding: EdgeInsets.zero, 
                                             ),
-                                           onChanged: (_) {
-                                              if (!mounted) return;
+                                         onChanged: (_) {
+                                          if (!mounted) return;
 
-                                              // se NON è stato modificato a mano, aggiorniamo il prezzo automaticamente
-                                              if (!op.priceManuallyEdited) {
-                                                final auto = op.basePrice * _qtyOf(op);
-                                                op.priceCtrl.text = _fmtEuro(auto);
+                                          final qty = _qtyOf(op);
+
+                                          if (op.priceManuallyEdited) {
+                                            // se ho un prezzo manuale, uso l'unitario manuale
+                                            final unit = op.manualUnitPrice;
+
+                                            if (unit != null) {
+                                              op.priceCtrl.text = _fmtEuro(unit * qty);
+                                            } else {
+                                              // fallback: se per qualche motivo non c'è, ricavalo dal totale corrente
+                                              final currentTotal = _parseEuro(op.priceCtrl.text);
+                                              if (currentTotal != null) {
+                                                final derivedUnit = currentTotal / (qty == 0 ? 1 : qty);
+                                                op.manualUnitPrice = derivedUnit;
+                                                op.priceCtrl.text = _fmtEuro(derivedUnit * qty);
                                               }
+                                            }
+                                          } else {
+                                            // automatico: unitPrice * qty
+                                            op.priceCtrl.text = _fmtEuro(op.unitPrice * qty);
+                                          }
 
-                                              setState(() {});
-                                            },
+                                          setState(() {});
+                                        },
+
+
                                             ),
                                           ),
                                         ),
@@ -665,11 +766,22 @@ Widget _pickupChip(_PendingOp op, String value) {
                                           contentPadding: EdgeInsets.zero,
                                         ),
                                         
-                                        onChanged: (_) {
-                                          if (!mounted) return;
-                                          op.priceManuallyEdited = true;
-                                          setState(() {});
-                                        },
+                                       onChanged: (_) {
+                                        if (!mounted) return;
+
+                                        op.priceManuallyEdited = true;
+
+                                        final total = _parseEuro(op.priceCtrl.text);
+                                        final qty = _qtyOf(op);
+
+                                        if (total != null && qty > 0) {
+                                          // salvo il prezzo unitario manuale
+                                          op.manualUnitPrice = total / qty;
+                                        }
+
+                                        setState(() {});
+                                      },
+
                                       ),
                                         ),
                                         ),
@@ -678,23 +790,74 @@ Widget _pickupChip(_PendingOp op, String value) {
                                           width: _wTipo,
                                           child: _fieldBox(
                                             label: 'Tipo',
-                                            child: DropdownButtonHideUnderline(
-                                              child: SizedBox(
-                                                height: 24, // 🔒 altezza fissa = niente espansione verticale
-                                                child: DropdownButton<String>(
-                                                  value: op.type,
-                                                  items: const [
-                                                    DropdownMenuItem(value: 'Lavaggio', child: Text('Lavaggio')),
-                                                    DropdownMenuItem(value: 'Stiratura', child: Text('Stiratura')),
-                                                    DropdownMenuItem(value: 'Lav+Stiro', child: Text('Lav+Stiro')),
-                                                    DropdownMenuItem(value: 'Altro', child: Text('Altro')),
-                                                  ],
-                                                  onChanged: (v) {
-                                                    setState(() => op.type = v ?? 'Lavaggio');
-                                                  },
-                                                ),
-                                              ),
+                                            child: !_typesLoaded
+                                        ? const SizedBox(
+                                            height: 24,
+                                            child: Center(
+                                              child: CircularProgressIndicator(strokeWidth: 2),
                                             ),
+                                          )
+                                        : DropdownButtonHideUnderline(
+                                            child: DropdownButton<String>(
+                                              
+                                              key: ValueKey('${op.garmentId}_${op.typeId}'),
+                                              value: (op.typeId != null && _operationTypes.any((t) => t['id'] == op.typeId))
+                                                  ? op.typeId
+                                                  : null,
+                                              hint: const Text('Seleziona'),
+                                              isDense: true,
+                                              items: _operationTypes.map((t) {
+                                                return DropdownMenuItem<String>(
+                                                  value: t['id'],
+                                                  child: Text(t['name']!),
+                                                );
+                                              }).toList(),
+                                              onChanged: (typeId) {
+                                                if (typeId == null) return;
+
+                                                final type = _operationTypes.firstWhere((t) => t['id'] == typeId);
+                                                final typeName = type['name']!;
+
+                                                // 1) selezione IMMEDIATA (così la label cambia sempre)
+                                         setState(() {
+                                          op.typeId = typeId;
+                                          op.typeName = typeName;
+                                          op.priceManuallyEdited = false;
+
+                                          // opzionale: mentre carica il prezzo, mostri 0 (o lasci invariato)
+                                          op.priceCtrl.text = _fmtEuro(0);
+                                        });
+
+
+                                                // 2) poi provo a caricare il prezzo (se fallisce NON blocca la selezione)
+                                                () async {
+                                                  try {
+                                                  final prices = await _garmentService.getPricesForGarment(op.garmentId);
+                                                  final price = prices[typeId] ?? 0;
+
+                                                    if (!mounted) return;
+                                                    setState(() {
+                                                      // prezzo unitario da Firestore
+                                                      op.unitPrice = (price as num).toDouble();
+
+                                                      final qty = _qtyOf(op);
+                                                    op.manualUnitPrice = null;
+                                                    op.priceManuallyEdited = false;
+
+
+                                                      // totale riga
+                                                      op.priceCtrl.text = _fmtEuro(op.unitPrice * qty);
+                                                    });
+
+                                                  } catch (e) {
+                                                    // IMPORTANTISSIMO: non deve impedire la selezione
+                                                    if (!mounted) return;
+                                                    _toast('Prezzo non leggibile (rules/permessi): $e');
+                                                  }
+                                                }();
+                                              },
+                                            ),
+                                          ),
                                           ),
                                         ),
                                         const SizedBox(width: _gap),
@@ -778,7 +941,11 @@ Widget _pickupChip(_PendingOp op, String value) {
                                           width: _wAddBtn,
                                           height: 44,
                                           child: ElevatedButton(
-                                            onPressed: () => _addPendingToCart(i),
+                                          //onPressed: (op.typeId == null || _priceOf(op) <= 0) ? null : () => _addPendingToCart(i),
+                                            onPressed: (op.typeId == null)
+                                              ? null
+                                              : () => _addPendingToCart(i),
+
                                             style: ElevatedButton.styleFrom(
                                               shape: const StadiumBorder(),
                                               padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -889,36 +1056,38 @@ class _PendingOp {
   DateTime pickupDate;
   String pickupSlot;
 
-  // prezzo base del capo (listino)
-  final double basePrice;
-
+  // prezzo unitario corrente (da Firestore per (garment,type))
+  double unitPrice;
+  double? manualUnitPrice;
   // input modificabili
   final TextEditingController qtyCtrl;
-  final TextEditingController priceCtrl;
+  final TextEditingController priceCtrl; // <-- totale riga (unitPrice * qty)
 
-  // se true: l’utente ha modificato il prezzo a mano
   bool priceManuallyEdited;
 
-  String type;
+  String? typeId;
+  String typeName;
 
   final DateTime releaseDate;
-
- 
-
   final ScrollController hScrollCtrl;
+
+  int currentQty;
 
   _PendingOp({
     required this.garmentId,
     required this.garmentName,
-    required this.basePrice,
+    required this.unitPrice,
     required this.qtyCtrl,
     required this.priceCtrl,
     required this.priceManuallyEdited,
-    required this.type,
+    required this.typeId,
+    required this.typeName,
     required this.releaseDate,
     required this.pickupDate,
     required this.hScrollCtrl,
     required this.pickupSlot,
+    required this.currentQty,
+    this.manualUnitPrice,
   });
 
   void dispose() {
@@ -927,6 +1096,7 @@ class _PendingOp {
     hScrollCtrl.dispose();
   }
 }
+
 
 
 class _CartItem {

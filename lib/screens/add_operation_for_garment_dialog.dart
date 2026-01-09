@@ -2,59 +2,58 @@ import 'package:flutter/material.dart';
 import '../services/garment_service.dart';
 import '../services/operation_type_service.dart';
 
-class AddGarmentDialog {
-  static Future<bool?> open(BuildContext context) {
+class AddOperationForGarmentDialog {
+  static Future<bool?> open(
+    BuildContext context, {
+    required String garmentId,
+    required String garmentName,
+  }) {
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const _AddGarmentDialog(),
+      builder: (_) => _AddOperationForGarmentDialog(
+        garmentId: garmentId,
+        garmentName: garmentName,
+      ),
     );
   }
 }
 
-class _AddGarmentDialog extends StatefulWidget {
-  const _AddGarmentDialog();
+class _AddOperationForGarmentDialog extends StatefulWidget {
+  final String garmentId;
+  final String garmentName;
+
+  const _AddOperationForGarmentDialog({
+    required this.garmentId,
+    required this.garmentName,
+  });
 
   @override
-  State<_AddGarmentDialog> createState() => _AddGarmentDialogState();
+  State<_AddOperationForGarmentDialog> createState() =>
+      _AddOperationForGarmentDialogState();
 }
 
-class _AddGarmentDialogState extends State<_AddGarmentDialog> {
-  final _nameCtrl = TextEditingController();
+class _AddOperationForGarmentDialogState
+    extends State<_AddOperationForGarmentDialog> {
   final _priceCtrl = TextEditingController();
 
   final _garmentService = GarmentService();
   final _typeService = OperationTypeService();
 
   String? _selectedTypeId;
-  String? _selectedTypeName;
-
-  bool _saveOnlyType = false;
   bool _loading = false;
   String? _error;
 
   double? _parsePrice(String s) {
-    final v = s.trim().replaceAll(',', '.');
+    final v = s.trim().replaceAll('€', '').replaceAll(' ', '').replaceAll(',', '.');
     return double.tryParse(v);
   }
 
   bool get _canSave {
-    // CASO 1: salvo solo tipo (senza capo)
-    if (_saveOnlyType) {
-      final hasId = _selectedTypeId != null && _selectedTypeId!.trim().isNotEmpty;
-      final hasName = _selectedTypeName != null && _selectedTypeName!.trim().isNotEmpty;
-      return hasId || hasName;
-    }
-
-    // CASO 2: capo + tipo + prezzo (tutti obbligatori)
-    final nameOk = _nameCtrl.text.trim().isNotEmpty;
-    final typeOk = (_selectedTypeId != null && _selectedTypeId!.trim().isNotEmpty) ||
-        (_selectedTypeName != null && _selectedTypeName!.trim().isNotEmpty);
-
+    final typeOk = _selectedTypeId != null;
     final price = _parsePrice(_priceCtrl.text);
     final priceOk = price != null && price >= 0;
-
-    return nameOk && typeOk && priceOk;
+    return typeOk && priceOk && !_loading;
   }
 
   Future<String?> _askNewType() async {
@@ -83,25 +82,6 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
     );
   }
 
-  Future<String> _ensureTypeId() async {
-    // Se ho già un id valido, uso quello
-    final existingId = _selectedTypeId;
-    if (existingId != null && existingId.trim().isNotEmpty) {
-      return existingId;
-    }
-
-    // Altrimenti creo/recupero per nome
-    final name = _selectedTypeName?.trim() ?? '';
-    if (name.isEmpty) {
-      throw Exception('Seleziona o inserisci un tipo');
-    }
-
-    final id = await _typeService.getOrCreateOperationType(typeName: name);
-    _selectedTypeId = id;
-    _selectedTypeName = name;
-    return id;
-  }
-
   Future<void> _save() async {
     setState(() {
       _loading = true;
@@ -109,25 +89,15 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
     });
 
     try {
-      if (_saveOnlyType) {
-        // salvo solo tipo
-        await _ensureTypeId();
-      } else {
-        // salvo capo + tipo + prezzo
-        final name = _nameCtrl.text.trim();
-        final price = _parsePrice(_priceCtrl.text);
-        if (price == null) throw Exception('Prezzo non valido');
+      final price = _parsePrice(_priceCtrl.text);
+      if (_selectedTypeId == null) throw Exception('Seleziona un tipo');
+      if (price == null) throw Exception('Prezzo non valido');
 
-        final typeId = await _ensureTypeId();
-
-        final garmentId = await _garmentService.createGarment(name: name);
-
-        await _garmentService.setPriceForGarmentType(
-          garmentId: garmentId,
-          typeId: typeId,
-          price: price,
-        );
-      }
+      await _garmentService.setPriceForGarmentType(
+        garmentId: widget.garmentId,
+        typeId: _selectedTypeId!,
+        price: price,
+      );
 
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -141,7 +111,6 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
     _priceCtrl.dispose();
     super.dispose();
   }
@@ -149,22 +118,12 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Nuovo capo / tipo'),
+      title: Text('Aggiungi operazione · ${widget.garmentName}'),
       content: SizedBox(
         width: 460,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // NOME CAPO
-            TextField(
-              controller: _nameCtrl,
-              enabled: !_saveOnlyType,
-              decoration: const InputDecoration(labelText: 'Nome capo'),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 14),
-
-            // TIPO OPERAZIONE (DROPDOWN + ADD)
             StreamBuilder(
               stream: _typeService.streamTypes(),
               builder: (context, snapshot) {
@@ -185,7 +144,6 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
 
                 final docs = snapshot.data?.docs ?? [];
 
-                // Ordino lato UI (così non dipendi da indici Firestore)
                 docs.sort((a, b) {
                   final an = (a.data()['nameLowerCase'] ?? a.data()['name'] ?? '').toString();
                   final bn = (b.data()['nameLowerCase'] ?? b.data()['name'] ?? '').toString();
@@ -201,7 +159,6 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
                   );
                 }).toList();
 
-                // Se l’id selezionato non esiste più, reset
                 final validValue =
                     items.any((e) => e.value == _selectedTypeId) ? _selectedTypeId : null;
 
@@ -217,12 +174,7 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
                         ),
                         onChanged: (v) {
                           if (v == null) return;
-                          final doc = docs.firstWhere((d) => d.id == v);
-                          final data = doc.data();
-                          setState(() {
-                            _selectedTypeId = v;
-                            _selectedTypeName = (data['name'] ?? '').toString();
-                          });
+                          setState(() => _selectedTypeId = v);
                         },
                       ),
                     ),
@@ -234,13 +186,14 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
                         final res = await _askNewType();
                         if (res == null || res.trim().isEmpty) return;
 
-                        final id = await _typeService.getOrCreateOperationType(typeName: res);
-
-                        if (!mounted) return;
-                        setState(() {
-                          _selectedTypeId = id;
-                          _selectedTypeName = res.trim();
-                        });
+                        try {
+                          final id = await _typeService.getOrCreateOperationType(typeName: res);
+                          if (!mounted) return;
+                          setState(() => _selectedTypeId = id);
+                        } catch (e) {
+                          if (!mounted) return;
+                          setState(() => _error = e.toString());
+                        }
                       },
                     ),
                   ],
@@ -250,31 +203,19 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
 
             const SizedBox(height: 14),
 
-            // PREZZO
-            if (!_saveOnlyType)
-              TextField(
-                controller: _priceCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Prezzo',
-                  prefixText: '€ ',
-                ),
-                onChanged: (_) => setState(() {}),
+            TextField(
+              controller: _priceCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Prezzo',
+                prefixText: '€ ',
               ),
-
-            const SizedBox(height: 10),
-
-            // SOLO TIPO
-            CheckboxListTile(
-              value: _saveOnlyType,
-              onChanged: (v) => setState(() => _saveOnlyType = v ?? false),
-              title: const Text('Salva solo tipo'),
-              contentPadding: EdgeInsets.zero,
+              onChanged: (_) => setState(() {}),
             ),
 
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.only(top: 10),
                 child: Text(_error!, style: const TextStyle(color: Colors.red)),
               ),
           ],
@@ -286,7 +227,7 @@ class _AddGarmentDialogState extends State<_AddGarmentDialog> {
           child: const Text('Annulla'),
         ),
         ElevatedButton(
-          onPressed: (!_canSave || _loading) ? null : _save,
+          onPressed: _canSave ? _save : null,
           child: _loading
               ? const SizedBox(
                   width: 18,

@@ -101,8 +101,7 @@ class AuthService {
     final emailLc = email.toLowerCase();
 
     final snap = await userRef.get();
-
-    // se manca users/{uid}, crealo completo
+ 
     if (!snap.exists) {
       final fallbackCompanyName = (user.displayName ?? 'Azienda').trim();
 

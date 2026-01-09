@@ -21,21 +21,92 @@ class GarmentService {
     return companyId;
   }
 
-  Future<void> createGarment({
-    required String name,
-    required double basePrice,
-  }) async {
-    final companyId = await _getCompanyId();
-    final n = name.trim();
+Future<String> createGarment({
+  required String name,
+}) async {
+  final companyId = await _getCompanyId();
+  final n = name.trim();
+  if (n.isEmpty) throw Exception('Nome capo vuoto');
 
-    await _db.collection('garments').add({
-      'companyId': companyId,
-      'name': n,
-      'nameLowerCase': n.toLowerCase(), // ✅ CAMPO CHIAVE
-      'basePrice': basePrice,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+  final nLower = n.toLowerCase();
+
+  // 🔒 Anti-duplicato (case-insensitive) per company
+  final existing = await _db
+      .collection('garments')
+      .where('companyId', isEqualTo: companyId)
+      .where('nameLowerCase', isEqualTo: nLower)
+      .limit(1)
+      .get();
+
+  if (existing.docs.isNotEmpty) {
+    throw Exception('Capo già esistente: "$n"');
   }
+
+  final doc = await _db.collection('garments').add({
+    'companyId': companyId,
+    'name': n,
+    'nameLowerCase': nLower,
+    'createdAt': FieldValue.serverTimestamp(),
+  });
+
+  return doc.id;
+}
+
+
+
+
+Future<void> setPriceForGarmentType({
+  required String garmentId,
+  required String typeId,
+  required double price,
+}) async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    throw Exception('Utente non autenticato');
+  }
+
+  final userSnap = await FirebaseFirestore.instance
+      .collection('users')
+      .doc(user.uid)
+      .get();
+
+  final companyId = userSnap.data()?['companyId'];
+  if (companyId == null) {
+    throw Exception('companyId mancante');
+  }
+
+  await FirebaseFirestore.instance
+      .collection('garments')
+      .doc(garmentId)
+      .collection('prices')
+      .doc(typeId)
+      .set({
+        'companyId': companyId,
+        'price': price,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+}
+
+  Future<Map<String, double>> getPricesForGarment(String garmentId) async {
+  final snap = await _db
+      .collection('garments')
+      .doc(garmentId)
+      .collection('prices')
+      .get();
+
+  final Map<String, double> out = {};
+
+  for (final d in snap.docs) {
+    final data = d.data();
+    final price = (data['price'] as num?)?.toDouble();
+    if (price != null) {
+      out[d.id] = price;
+    }
+  }
+
+  return out;
+}
+
 
   Stream<QuerySnapshot<Map<String, dynamic>>> searchGarments(String query) async* {
     final companyId = await _getCompanyId();
@@ -44,9 +115,11 @@ class GarmentService {
     yield* _db
         .collection('garments')
         .where('companyId', isEqualTo: companyId)
-        .orderBy('nameLowerCase')       // ✅
+        .orderBy('nameLowerCase')       
         .startAt([q])
         .endAt(['$q\uf8ff'])
         .snapshots();
   }
+
+  
 }
