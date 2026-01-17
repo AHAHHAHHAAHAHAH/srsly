@@ -1,5 +1,6 @@
-import 'dart:async';
+import 'dart:async';  
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/client_service.dart';
 import '../services/garment_service.dart';
 import '../shell/app_shell.dart';
@@ -7,6 +8,15 @@ import '../shell/app_shell.dart' show AppSection;
 import 'add_garment_dialog.dart';
 import '../services/operation_type_service.dart';
 import 'add_operation_for_garment_dialog.dart';
+import '../core/company_context.dart';
+import '../services/company_counters_service.dart';
+import '../services/order_service.dart';
+import '../printing/receipt_models.dart';
+import '../printing/receipt_builders.dart';
+import '../services/company_ticket_service.dart';
+
+
+
 
 class CapiScreen extends StatefulWidget {
   final String? clientId;
@@ -25,6 +35,12 @@ class _CapiScreenState extends State<CapiScreen> {
 
 final _typeService = OperationTypeService();
 
+final _countersService = CompanyCountersService();
+final _orderService = OrderService();
+
+final _ticketService = CompanyTicketService();
+
+String? _companyId;
 
 
 List<Map<String, String>> _operationTypes = [];
@@ -83,7 +99,11 @@ void initState() {
   super.initState();
   _loadTypes();
 }
-
+Future<void> _loadCompanyId() async {
+  final cid = await CompanyContext.instance.getCompanyId();
+  if (!mounted) return;
+  setState(() => _companyId = cid);
+}
 Future<void> _loadTypes() async {
   final snap = await _typeService.streamTypes().first;
   _operationTypes = snap.docs
@@ -426,23 +446,83 @@ Widget _pickupChip(_PendingOp op, String value) {
 
   }
 
-  Future<void> _printAndClose() async {
-    if (_cart.isEmpty) {
-      _toast('Carrello vuoto');
-      return;
-    }
+   Future<void> _printAndClose() async {
+  if (_cart.isEmpty) {
+    _toast('Carrello vuoto');
+    return;
+  }
 
+  try {
+    debugPrint('PRINT STEP 0 - start');
+
+    final companyId = await CompanyContext.instance.getCompanyId();
+    debugPrint('PRINT STEP 1 - got companyId: $companyId');
+
+    // 1) snapshot cliente (prima, così se fallisce non incrementiamo nulla)
+    String clientName = '';
+    String clientPhone = '';
     if (widget.clientId != null) {
-      try {
-        await _clientService.markClientServed(
-          clientId: widget.clientId!,
-          label: 'Scontrino',
-        );
-      } catch (e) {
-        _toast('Errore aggiornamento storico: $e');
-      }
+      debugPrint('PRINT STEP 2 - loading client snapshot');
+      final snap = await _clientService.getClientById(widget.clientId!);
+      final data = snap.data() ?? {};
+      clientName = (data['fullName'] ?? '').toString();
+      clientPhone = (data['number'] ?? '').toString();
+    }
+    debugPrint('PRINT STEP 3 - client data ok');
+
+    // 2) items ordine (prima, così se fallisce non incrementiamo nulla)
+    final items = _cart.map((it) {
+      final unitPrice = (it.qty > 0) ? (it.price / it.qty) : it.price;
+
+      return {
+        'garmentId': it.garmentId,
+        'garmentName': it.garmentName,
+        'operationTypeName': it.type,
+        'qty': it.qty,
+        'lineTotal': it.price,
+        'unitPrice': unitPrice,
+        'releaseDate': Timestamp.fromDate(it.releaseDate),
+        'pickupDate': Timestamp.fromDate(it.pickupDate),
+        'pickupSlot': it.pickupSlot,
+      };
+    }).toList();
+    debugPrint('PRINT STEP 4 - items built: ${items.length}');
+
+    // 3) QUI (per ora) simuliamo che la stampa logica/fisica sia andata bene.
+    // Quando agganciamo la stampante USB, questo blocco verrà dopo l'esito "ok" reale.
+    debugPrint('PRINT STEP 5 - allocating ticket (after print OK)');
+
+    final ticketNumber =
+        await _ticketService.allocateTicketAfterSuccessfulPrint(companyId);
+
+    debugPrint('PRINT STEP 6 - ticket allocated: #$ticketNumber');
+
+    // 4) creo ordine con ticket
+    await _orderService.createOrder(
+      companyId: companyId,
+      clientId: widget.clientId,
+      clientName: clientName,
+      clientPhone: clientPhone,
+
+      ticketNumber: ticketNumber,
+      clientCode: ticketNumber,     // compat
+      partitaNumber: ticketNumber,  // compat
+
+      items: items,
+    );
+    debugPrint('PRINT STEP 7 - order created');
+
+    // 5) storico cliente
+    if (widget.clientId != null) {
+      debugPrint('PRINT STEP 8 - markClientServed');
+      await _clientService.markClientServed(
+        clientId: widget.clientId!,
+        label: 'Scontrino',
+      );
     }
 
+    // 6) pulizia UI
+    debugPrint('PRINT STEP 9 - cleaning UI');
     setState(() {
       _cart.clear();
       for (final p in _pending) {
@@ -453,12 +533,21 @@ Widget _pickupChip(_PendingOp op, String value) {
       _query = '';
     });
 
-    _toast('Operazione conclusa');
+    _toast('Operazione conclusa · Ticket #$ticketNumber');
 
     if (widget.clientId != null) {
       AppShell.of(context).goToSection(AppSection.home);
     }
+
+    debugPrint('PRINT STEP 10 - done');
+  } catch (e) {
+    _toast('Errore stampa/ordine: $e');
+    debugPrint('PRINT ERROR: $e');
   }
+}
+
+
+
 
   BoxDecoration _box() => BoxDecoration(
         color: Colors.white,
@@ -495,22 +584,66 @@ Widget _pickupChip(_PendingOp op, String value) {
                 final fullName = (data['fullName'] ?? '') as String;
                 final number = (data['number'] ?? '') as String;
 
-                  return Padding(
+   return Padding(
   padding: const EdgeInsets.only(bottom: 6),
-  child: Row(
+    child: Row(
     children: [
       const Icon(Icons.person, size: 16, color: Colors.grey),
       const SizedBox(width: 6),
-      Text(
-        '$fullName · $number',
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
+
+      Expanded(
+        child: Text(
+          '$fullName · $number',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+          overflow: TextOverflow.ellipsis,
         ),
+      ),
+
+      const SizedBox(width: 12),
+
+      FutureBuilder<String>(
+        future: CompanyContext.instance.getCompanyId(),
+        builder: (context, cidSnap) {
+          if (!cidSnap.hasData) {
+            return const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            );
+          }
+
+                return StreamBuilder<int>(
+          stream: _ticketService.streamNextTicket(cidSnap.data!),
+          builder: (context, tSnap) {
+            if (!tSnap.hasData) {
+              return const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              );
+            }
+
+            final nextTicket = tSnap.data ?? 0;
+
+                    return Text(
+            'Codice Cliente: #$nextTicket · Partita n°: #$nextTicket',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: Colors.grey.shade800,
+            ),
+          );
+          },
+        );
+        },
       ),
     ],
   ),
-);
+  );
+
 
               },
             ),

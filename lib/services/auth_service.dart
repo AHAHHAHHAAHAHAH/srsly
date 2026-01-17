@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'company_counters_service.dart';
+
 
 class AuthService {
   AuthService._();
@@ -7,6 +9,8 @@ class AuthService {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  final CompanyCountersService _counters = CompanyCountersService();
 
   User? get currentUser => _auth.currentUser;
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -64,8 +68,13 @@ class AuthService {
     await _db.collection('companies').doc(companyId).set({
       'companyName': c,
       'companyNameLowerCase': c.toLowerCase(),
+      'nextClientCode': 0,
+      'nextPartitaNumber': 0,
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+
+    await _counters.ensureCountersExist(companyId);
+
 
     // non blocca se fallisce
     try {
@@ -122,6 +131,9 @@ class AuthService {
         'companyNameLowerCase': fallbackCompanyName.toLowerCase(),
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+
+      await _counters.ensureCountersExist(uid);
+
 
       return;
     }
