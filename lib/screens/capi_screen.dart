@@ -1,11 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../services/client_service.dart';
 import '../services/garment_service.dart';
+import '../services/operation_type_service.dart';
+import '../services/order_service.dart';
+
 import '../shell/app_shell.dart';
 import '../shell/app_shell.dart' show AppSection;
+
 import 'add_garment_dialog.dart';
-import '../services/operation_type_service.dart';
 import 'add_operation_for_garment_dialog.dart';
 
 class CapiScreen extends StatefulWidget {
@@ -21,14 +26,10 @@ class CapiScreen extends StatefulWidget {
 class _CapiScreenState extends State<CapiScreen> {
   final _garmentService = GarmentService();
   final _clientService = ClientService();
+  final _typeService = OperationTypeService();
 
-
-final _typeService = OperationTypeService();
-
-
-
-List<Map<String, String>> _operationTypes = [];
-bool _typesLoaded = false;
+  List<Map<String, String>> _operationTypes = [];
+  bool _typesLoaded = false;
 
   // Search
   final _searchCtrl = TextEditingController();
@@ -60,74 +61,57 @@ bool _typesLoaded = false;
   static const double _gapBig = 8;
 
   double get _rowMinWidth =>
-    _wCapo +
-    _gap +
-    _wQty +
-    _gap +
-    _wPrezzo +
-    _gap +
-    _wTipo +
-    _gap +
-    _wRilascio +
-    _gap +
-    _wRitiro +
-    _gap +
-    _wAddBtn +
-    _gapBig +
-    _wDelBtn +
-    24; // 👈 buffer anti-overflow
+      _wCapo +
+      _gap +
+      _wQty +
+      _gap +
+      _wPrezzo +
+      _gap +
+      _wTipo +
+      _gap +
+      _wRilascio +
+      _gap +
+      _wRitiro +
+      _gap +
+      _wAddBtn +
+      _gapBig +
+      _wDelBtn +
+      24; // 👈 buffer anti-overflow
 
+  @override
+  void initState() {
+    super.initState();
+    _loadTypes();
+  }
 
-    @override
-void initState() {
-  super.initState();
-  _loadTypes();
-}
+  Future<void> _loadTypes() async {
+    final snap = await _typeService.streamTypes().first;
+    _operationTypes = snap.docs
+        .map((d) => {
+              'id': d.id,
+              'name': d['name'] as String,
+            })
+        .toList();
 
-Future<void> _loadTypes() async {
-  final snap = await _typeService.streamTypes().first;
-  _operationTypes = snap.docs
-      .map((d) => {
-            'id': d.id,
-            'name': d['name'] as String,
-          })
-      .toList();
+    if (!mounted) return;
+    setState(() => _typesLoaded = true);
+  }
 
-  setState(() => _typesLoaded = true);
-}
+  Future<void> _onTypeSelected(_PendingOp op, String typeId) async {
+    final prices = await _garmentService.getPricesForGarment(op.garmentId);
+    final price = prices[typeId] ?? 0;
 
+    if (!mounted) return;
 
-    Future<void> _loadOperationTypes() async {
-      final snap = await _typeService.streamTypes().first;
+    setState(() {
+      op.typeId = typeId;
+      op.typeName =
+          _operationTypes.firstWhere((t) => t['id'] == typeId)['name']!;
+      op.priceManuallyEdited = false;
+      op.priceCtrl.text = _fmtEuro(price);
+    });
+  }
 
-      setState(() {
-        _operationTypes = snap.docs
-            .map((d) => {
-                  'id': d.id,
-                  'name': d['name'] as String,
-                })
-            .toList();
-        _typesLoaded = true;
-      });
-    }
-
-Future<void> _onTypeSelected(_PendingOp op, String typeId) async {
-  final prices =
-      await _garmentService.getPricesForGarment(op.garmentId);
-
-  final price = prices[typeId] ?? 0;
-
-  if (!mounted) return;
-
-  setState(() {
-    op.typeId = typeId;
-    op.typeName = _operationTypes
-        .firstWhere((t) => t['id'] == typeId)['name']!;
-    op.priceManuallyEdited = false;
-    op.priceCtrl.text = _fmtEuro(price);
-  });
-}
- 
   @override
   void dispose() {
     _debounce?.cancel();
@@ -147,13 +131,17 @@ Future<void> _onTypeSelected(_PendingOp op, String typeId) async {
   }
 
   int? _parseQty(String s) => int.tryParse(s.trim());
-    double? _parseEuro(String s) {
-    final t = s.trim().replaceAll('€', '').replaceAll(' ', '').replaceAll(',', '.');
+
+  double? _parseEuro(String s) {
+    final t = s
+        .trim()
+        .replaceAll('€', '')
+        .replaceAll(' ', '')
+        .replaceAll(',', '.');
     return double.tryParse(t);
   }
 
-String _fmtEuro(double v) => '€ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
-
+  String _fmtEuro(double v) => '€ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
 
   void _toast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -171,41 +159,40 @@ String _fmtEuro(double v) => '€ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
   }
 
   String _fmtDate(DateTime d) {
-  final dd = d.day.toString().padLeft(2, '0');
-  final mm = d.month.toString().padLeft(2, '0');
-  final yyyy = d.year.toString();
-  return '$dd/$mm/$yyyy';
-}
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString();
+    return '$dd/$mm/$yyyy';
+  }
 
-Widget _pickupChip(_PendingOp op, String value) {
-  final selected = op.pickupSlot == value;
+  Widget _pickupChip(_PendingOp op, String value) {
+    final selected = op.pickupSlot == value;
 
-  return InkWell(
-    onTap: () {
-      setState(() {
-        op.pickupSlot = value;
-      });
-    },
-    borderRadius: BorderRadius.circular(20),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: selected ? Colors.black : Colors.black.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        value,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          color: selected ? Colors.white : Colors.black87,
+    return InkWell(
+      onTap: () {
+        setState(() {
+          op.pickupSlot = value;
+        });
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? Colors.black : Colors.black.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(20),
+
+        ),
+        child: Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : Colors.black87,
+          ),
         ),
       ),
-    ),
-  );
-}
-
-
+    );
+  }
 
   int _qtyOf(_PendingOp op) {
     final q = _parseQty(op.qtyCtrl.text);
@@ -214,40 +201,35 @@ Widget _pickupChip(_PendingOp op, String value) {
 
   double _priceOf(_PendingOp op) {
     if (op.priceManuallyEdited) {
-        final v = _parseEuro(op.priceCtrl.text);
-        return v ?? (op.unitPrice * _qtyOf(op));
+      final v = _parseEuro(op.priceCtrl.text);
+      return v ?? (op.unitPrice * _qtyOf(op));
+    }
+    return op.unitPrice * _qtyOf(op);
   }
-  // altrimenti prezzo automatico = basePrice * qty
-  return op.unitPrice * _qtyOf(op);  }
 
- 
-   
   void _addPending({
     required String id,
     required String name,
     required double basePrice,
-
   }) {
     setState(() {
-    _pending.add(
-      _PendingOp(
-        garmentId: id,
-        garmentName: name,
-        unitPrice: basePrice,
-        currentQty: 1,
-        qtyCtrl: TextEditingController(text: '1'),
-        priceCtrl: TextEditingController(text: _fmtEuro(basePrice * 1)),
-        priceManuallyEdited: false,
-        typeId: null,
-        typeName: '',
-        releaseDate: DateTime.now(),
-        pickupDate: DateTime.now().add(const Duration(days: 1)),
-        pickupSlot: 'Mattina',
-        hScrollCtrl: ScrollController(),
-      ),
-    );
-
-
+      _pending.add(
+        _PendingOp(
+          garmentId: id,
+          garmentName: name,
+          unitPrice: basePrice,
+          currentQty: 1,
+          qtyCtrl: TextEditingController(text: '1'),
+          priceCtrl: TextEditingController(text: _fmtEuro(basePrice * 1)),
+          priceManuallyEdited: false,
+          typeId: null,
+          typeName: '',
+          releaseDate: DateTime.now(),
+          pickupDate: DateTime.now().add(const Duration(days: 1)),
+          pickupSlot: 'Mattina',
+          hScrollCtrl: ScrollController(),
+        ),
+      );
     });
   }
 
@@ -261,10 +243,9 @@ Widget _pickupChip(_PendingOp op, String value) {
   void _addPendingToCart(int index) {
     final op = _pending[index];
     if (op.typeId == null) {
-     _toast('Seleziona un tipo');
+      _toast('Seleziona un tipo');
       return;
     }
-
 
     final qty = _qtyOf(op);
     final price = _priceOf(op);
@@ -279,19 +260,18 @@ Widget _pickupChip(_PendingOp op, String value) {
     }
 
     setState(() {
-    _cart.add(
-      _CartItem(
-        garmentId: op.garmentId,
-        garmentName: op.garmentName,
-        qty: qty,
-        price: price,
-        type: op.typeName,
-        releaseDate: op.releaseDate,
-        pickupDate: op.pickupDate,
-        pickupSlot: op.pickupSlot,
-      ),
-    );
-
+      _cart.add(
+        _CartItem(
+          garmentId: op.garmentId,
+          garmentName: op.garmentName,
+          qty: qty,
+          price: price,
+          type: op.typeName,
+          releaseDate: op.releaseDate,
+          pickupDate: op.pickupDate,
+          pickupSlot: op.pickupSlot,
+        ),
+      );
 
       op.dispose();
       _pending.removeAt(index);
@@ -304,126 +284,151 @@ Widget _pickupChip(_PendingOp op, String value) {
 
   Future<void> _openCart() async {
     await showDialog(
-  context: context,
-    barrierDismissible: false,
-  builder: (context) {
-    return StatefulBuilder(
-      builder: (context, setDialogState) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              const Icon(Icons.shopping_cart_outlined),
-              const SizedBox(width: 10),
-              Text('Carrello (${_cart.length})'),
-            ],
-          ),
-          content: SizedBox(
-            width: 680,
-            child: _cart.isEmpty
-                ? const Text('Carrello vuoto')
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // HEADER
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          children: const [
-                            Expanded(flex: 3, child: Text('Capo', style: TextStyle(fontWeight: FontWeight.w700))),
-                            Expanded(flex: 1, child: Text('Qtà', style: TextStyle(fontWeight: FontWeight.w700))),
-                            Expanded(flex: 2, child: Text('Prezzo', style: TextStyle(fontWeight: FontWeight.w700))),
-                            Expanded(flex: 2, child: Text('Tipo', style: TextStyle(fontWeight: FontWeight.w700))),
-                            Expanded(flex: 2, child: Text('Rilascio', style: TextStyle(fontWeight: FontWeight.w700))),
-                            Expanded(flex: 3, child: Text('Ritiro', style: TextStyle(fontWeight: FontWeight.w700))),
-                            SizedBox(width: 40),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      const SizedBox(height: 8),
-
-                      // LISTA
-                      SizedBox(
-                        height: 260,
-                        child: ListView.separated(
-                          itemCount: _cart.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, i) {
-                            final it = _cart[i];
-                            return Row(
-                              children: [
-                                Expanded(flex: 3, child: Text(it.garmentName)),
-                                Expanded(flex: 1, child: Text('${it.qty}')),
-                                Expanded(flex: 2, child: Text('€ ${it.price.toStringAsFixed(2)}')),
-                                Expanded(flex: 2, child: Text(it.type)),
-                                Expanded(flex: 2, child: Text(_fmtDate(it.releaseDate))),
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.shopping_cart_outlined),
+                  const SizedBox(width: 10),
+                  Text('Carrello (${_cart.length})'),
+                ],
+              ),
+              content: SizedBox(
+                width: 680,
+                child: _cart.isEmpty
+                    ? const Text('Carrello vuoto')
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: const [
                                 Expanded(
-                                  flex: 3,
-                                  child: Text(
-                                    '${_fmtDate(it.pickupDate)} · ${it.pickupSlot}',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
-                                    onPressed: () {
-                                      setDialogState(() {
-                                        _cart.removeAt(i);
-                                      });
-                                      setState(() {});
-                                    },
-                                  ),
-                                ),
+                                    flex: 3,
+                                    child: Text('Capo',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700))),
+                                Expanded(
+                                    flex: 1,
+                                    child: Text('Qtà',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700))),
+                                Expanded(
+                                    flex: 2,
+                                    child: Text('Prezzo',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700))),
+                                Expanded(
+                                    flex: 2,
+                                    child: Text('Tipo',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700))),
+                                Expanded(
+                                    flex: 2,
+                                    child: Text('Rilascio',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700))),
+                                Expanded(
+                                    flex: 3,
+                                    child: Text('Ritiro',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700))),
+                                SizedBox(width: 40),
                               ],
-                            );
-                          },
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // TOTALE
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          'Totale: € ${_total.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
+                            ),
                           ),
-                        ),
+                          const Divider(height: 1),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 260,
+                            child: ListView.separated(
+                              itemCount: _cart.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (context, i) {
+                                final it = _cart[i];
+                                return Row(
+                                  children: [
+                                    Expanded(
+                                        flex: 3, child: Text(it.garmentName)),
+                                    Expanded(flex: 1, child: Text('${it.qty}')),
+                                    Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                            '€ ${it.price.toStringAsFixed(2)}')),
+                                    Expanded(flex: 2, child: Text(it.type)),
+                                    Expanded(
+                                        flex: 2,
+                                        child: Text(_fmtDate(it.releaseDate))),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        '${_fmtDate(it.pickupDate)} · ${it.pickupSlot}',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 44,
+                                      height: 44,
+                                      child: IconButton(
+                                        icon: const Icon(Icons.delete,
+                                            color: Colors.red),
+                                        onPressed: () {
+                                          setDialogState(() {
+                                            _cart.removeAt(i);
+                                          });
+                                          setState(() {});
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              'Totale: € ${_total.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Chiudi'),
-            ),
-            TextButton(
-              onPressed: _cart.isEmpty
-                  ? null
-                  : () {
-                      setDialogState(() {
-                        _cart.clear();
-                      });
-                      setState(() {});
-                      Navigator.of(context).pop();
-                      _toast('Carrello svuotato');
-                    },
-              child: const Text('Svuota'),
-            ),
-          ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Chiudi'),
+                ),
+                TextButton(
+                  onPressed: _cart.isEmpty
+                      ? null
+                      : () {
+                          setDialogState(() {
+                            _cart.clear();
+                          });
+                          setState(() {});
+                          Navigator.of(context).pop();
+                          _toast('Carrello svuotato');
+                        },
+                  child: const Text('Svuota'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
-  },
-);
-
   }
 
   Future<void> _printAndClose() async {
@@ -432,31 +437,56 @@ Widget _pickupChip(_PendingOp op, String value) {
       return;
     }
 
-    if (widget.clientId != null) {
-      try {
-        await _clientService.markClientServed(
-          clientId: widget.clientId!,
-          label: 'Scontrino',
-        );
-      } catch (e) {
-        _toast('Errore aggiornamento storico: $e');
-      }
+    if (widget.clientId == null) {
+      _toast('Cliente non valido');
+      return;
     }
 
-    setState(() {
-      _cart.clear();
-      for (final p in _pending) {
-        p.dispose();
-      }
-      _pending.clear();
-      _searchCtrl.clear();
-      _query = '';
-    });
+    try {
+      final clientSnap = await ClientService().getClientById(widget.clientId!);
+      final client = clientSnap.data()!;
 
-    _toast('Operazione conclusa');
+      final orderItems = _cart.map((c) {
+        return {
+          'garmentId': c.garmentId,
+          'garmentName': c.garmentName,
+          'qty': c.qty,
+          'unitPrice': c.price,
+          'lineTotal': c.price * c.qty,
+          'operationTypeName': c.type,
+          'releaseDate': Timestamp.fromDate(c.releaseDate),
+          'pickupDate': Timestamp.fromDate(c.pickupDate),
+          'pickupSlot': c.pickupSlot,
+        };
+      }).toList();
 
-    if (widget.clientId != null) {
+      await OrderService().createOrder(
+        clientId: widget.clientId!,
+        clientName: client['fullName'],
+        clientPhone: client['number'],
+        items: orderItems,
+      );
+
+      await _clientService.markClientServed(
+        clientId: widget.clientId!,
+        label: 'Scontrino',
+      );
+
+      // pulizia locale
+      setState(() {
+        _cart.clear();
+        for (final p in _pending) {
+          p.dispose();
+        }
+        _pending.clear();
+        _searchCtrl.clear();
+        _query = '';
+      });
+
+      _toast('Operazione conclusa');
       AppShell.of(context).goToSection(AppSection.home);
+    } catch (e) {
+      _toast('Errore salvataggio ordine: $e');
     }
   }
 
@@ -469,52 +499,12 @@ Widget _pickupChip(_PendingOp op, String value) {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
+        padding: const EdgeInsets.fromLTRB(24, 10, 24, 18),     
+         child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.clientId != null)
-            FutureBuilder(
-              future: ClientService().getClientById(widget.clientId!),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const SizedBox(
-                    height: 58,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  );
-                }
-
-                final data = snapshot.data!.data() ?? {};
-                final fullName = (data['fullName'] ?? '') as String;
-                final number = (data['number'] ?? '') as String;
-
-                  return Padding(
-  padding: const EdgeInsets.only(bottom: 6),
-  child: Row(
-    children: [
-      const Icon(Icons.person, size: 16, color: Colors.grey),
-      const SizedBox(width: 6),
-      Text(
-        '$fullName · $number',
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    ],
-  ),
-);
-
-              },
-            ),
-          const SizedBox(height: 14),
+          // ✅ HEADER CLIENTE + PILLOLA ora stanno in AppShell => qui niente doppioni
+          const SizedBox(height: 2),
 
           // BLOCCO SUPERIORE
           Container(
@@ -530,7 +520,8 @@ Widget _pickupChip(_PendingOp op, String value) {
                     SizedBox(width: 8),
                     Text(
                       'Ricerca capi',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                     ),
                   ],
                 ),
@@ -558,17 +549,16 @@ Widget _pickupChip(_PendingOp op, String value) {
                     ElevatedButton.icon(
                       icon: const Icon(Icons.add),
                       label: const Text('Nuovo capo'),
-                     onPressed: () async {
-                      final res = await AddGarmentDialog.open(context);
-                      if (res == true) {
-                        _toast('Salvato correttamente');
-                      }
-                    },
+                      onPressed: () async {
+                        final res = await AddGarmentDialog.open(context);
+                        if (res == true) {
+                          _toast('Salvato correttamente');
+                        }
+                      },
                     ),
                   ],
                 ),
-                const SizedBox(height: 10), 
-
+                const SizedBox(height: 10),
                 Expanded(
                   child: _query.isEmpty
                       ? const SizedBox()
@@ -582,11 +572,15 @@ Widget _pickupChip(_PendingOp op, String value) {
                               );
                             }
                             if (!snapshot.hasData) {
-                              return const Center(child: CircularProgressIndicator());
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
                             }
 
                             final docs = snapshot.data!.docs;
-                            if (docs.isEmpty) return const Text('Nessun capo trovato');
+                            if (docs.isEmpty) {
+                              return const Text('Nessun capo trovato');
+                            }
 
                             return ListView.builder(
                               itemCount: docs.length,
@@ -595,17 +589,20 @@ Widget _pickupChip(_PendingOp op, String value) {
                                 final d = doc.data();
                                 final name = (d['name'] ?? '') as String;
 
-                               return ListTile(
+                                return ListTile(
                                   title: Text(
                                     name,
-                                    style: const TextStyle(fontWeight: FontWeight.w800),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
-
                                   trailing: IconButton(
                                     icon: const Icon(Icons.add_circle_outline),
                                     tooltip: 'Aggiungi operazione',
                                     onPressed: () async {
-                                      final res = await AddOperationForGarmentDialog.open(
+                                      final res =
+                                          await AddOperationForGarmentDialog
+                                              .open(
                                         context,
                                         garmentId: doc.id,
                                         garmentName: name,
@@ -615,14 +612,12 @@ Widget _pickupChip(_PendingOp op, String value) {
                                       }
                                     },
                                   ),
-
                                   onTap: () => _addPending(
                                     id: doc.id,
                                     name: name,
                                     basePrice: 0,
                                   ),
                                 );
-
                               },
                             );
                           },
@@ -648,7 +643,6 @@ Widget _pickupChip(_PendingOp op, String value) {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 12),
-
                   Expanded(
                     child: _pending.isEmpty
                         ? const Align(
@@ -660,24 +654,26 @@ Widget _pickupChip(_PendingOp op, String value) {
                           )
                         : ListView.separated(
                             itemCount: _pending.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
                             itemBuilder: (context, i) {
                               final op = _pending[i];
-                              final pickupDate = op.pickupDate;
 
                               return GestureDetector(
                                 behavior: HitTestBehavior.translucent,
                                 onHorizontalDragStart: (details) {
                                   _dragController = op.hScrollCtrl;
                                   _dragStartX = details.localPosition.dx;
-                                  _dragStartOffset =
-                                      op.hScrollCtrl.hasClients ? op.hScrollCtrl.offset : 0;
+                                  _dragStartOffset = op.hScrollCtrl.hasClients
+                                      ? op.hScrollCtrl.offset
+                                      : 0;
                                 },
                                 onHorizontalDragUpdate: (details) {
                                   final ctrl = _dragController;
                                   if (ctrl == null || !ctrl.hasClients) return;
 
-                                  final dx = details.localPosition.dx - _dragStartX;
+                                  final dx =
+                                      details.localPosition.dx - _dragStartX;
                                   final target = _dragStartOffset - dx;
 
                                   final min = ctrl.position.minScrollExtent;
@@ -691,7 +687,8 @@ Widget _pickupChip(_PendingOp op, String value) {
                                 child: SingleChildScrollView(
                                   controller: op.hScrollCtrl,
                                   scrollDirection: Axis.horizontal,
-                                  physics: const NeverScrollableScrollPhysics(),
+                                  physics:
+                                      const NeverScrollableScrollPhysics(),
                                   child: SizedBox(
                                     width: _rowMinWidth,
                                     child: Row(
@@ -702,7 +699,8 @@ Widget _pickupChip(_PendingOp op, String value) {
                                             label: 'Capo',
                                             child: Text(
                                               op.garmentName,
-                                              style: const TextStyle(fontWeight: FontWeight.w700),
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.w700),
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
@@ -714,76 +712,87 @@ Widget _pickupChip(_PendingOp op, String value) {
                                             label: 'Quantità',
                                             child: TextField(
                                               controller: op.qtyCtrl,
-                                              keyboardType: TextInputType.number,
+                                              keyboardType:
+                                                  TextInputType.number,
                                               decoration: const InputDecoration(
-                                              border: InputBorder.none,
-                                              isDense: true,
-                                              contentPadding: EdgeInsets.zero, 
-                                            ),
-                                         onChanged: (_) {
-                                          if (!mounted) return;
+                                                border: InputBorder.none,
+                                                isDense: true,
+                                                contentPadding:
+                                                    EdgeInsets.zero,
+                                              ),
+                                              onChanged: (_) {
+                                                if (!mounted) return;
 
-                                          final qty = _qtyOf(op);
+                                                final qty = _qtyOf(op);
 
-                                          if (op.priceManuallyEdited) {
-                                            // se ho un prezzo manuale, uso l'unitario manuale
-                                            final unit = op.manualUnitPrice;
+                                                if (op.priceManuallyEdited) {
+                                                  final unit =
+                                                      op.manualUnitPrice;
 
-                                            if (unit != null) {
-                                              op.priceCtrl.text = _fmtEuro(unit * qty);
-                                            } else {
-                                              // fallback: se per qualche motivo non c'è, ricavalo dal totale corrente
-                                              final currentTotal = _parseEuro(op.priceCtrl.text);
-                                              if (currentTotal != null) {
-                                                final derivedUnit = currentTotal / (qty == 0 ? 1 : qty);
-                                                op.manualUnitPrice = derivedUnit;
-                                                op.priceCtrl.text = _fmtEuro(derivedUnit * qty);
-                                              }
-                                            }
-                                          } else {
-                                            // automatico: unitPrice * qty
-                                            op.priceCtrl.text = _fmtEuro(op.unitPrice * qty);
-                                          }
+                                                  if (unit != null) {
+                                                    op.priceCtrl.text =
+                                                        _fmtEuro(unit * qty);
+                                                  } else {
+                                                    final currentTotal =
+                                                        _parseEuro(
+                                                            op.priceCtrl.text);
+                                                    if (currentTotal != null) {
+                                                      final derivedUnit =
+                                                          currentTotal /
+                                                              (qty == 0
+                                                                  ? 1
+                                                                  : qty);
+                                                      op.manualUnitPrice =
+                                                          derivedUnit;
+                                                      op.priceCtrl.text =
+                                                          _fmtEuro(derivedUnit *
+                                                              qty);
+                                                    }
+                                                  }
+                                                } else {
+                                                  op.priceCtrl.text = _fmtEuro(
+                                                      op.unitPrice * qty);
+                                                }
 
-                                          setState(() {});
-                                        },
-
-
+                                                setState(() {});
+                                              },
                                             ),
                                           ),
                                         ),
                                         const SizedBox(width: _gap),
                                         SizedBox(
-                                            width: _wPrezzo,
-                                            child: _fieldBox(
-                                              label: 'Prezzo',
-                                       child: TextField(
-                                        controller: op.priceCtrl,
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                        decoration: const InputDecoration(
-                                          border: InputBorder.none,
-                                          isDense: true,
-                                          contentPadding: EdgeInsets.zero,
-                                        ),
-                                        
-                                       onChanged: (_) {
-                                        if (!mounted) return;
+                                          width: _wPrezzo,
+                                          child: _fieldBox(
+                                            label: 'Prezzo',
+                                            child: TextField(
+                                              controller: op.priceCtrl,
+                                              keyboardType: const TextInputType
+                                                  .numberWithOptions(
+                                                  decimal: true),
+                                              decoration: const InputDecoration(
+                                                border: InputBorder.none,
+                                                isDense: true,
+                                                contentPadding:
+                                                    EdgeInsets.zero,
+                                              ),
+                                              onChanged: (_) {
+                                                if (!mounted) return;
 
-                                        op.priceManuallyEdited = true;
+                                                op.priceManuallyEdited = true;
 
-                                        final total = _parseEuro(op.priceCtrl.text);
-                                        final qty = _qtyOf(op);
+                                                final total =
+                                                    _parseEuro(op.priceCtrl.text);
+                                                final qty = _qtyOf(op);
 
-                                        if (total != null && qty > 0) {
-                                          // salvo il prezzo unitario manuale
-                                          op.manualUnitPrice = total / qty;
-                                        }
+                                                if (total != null && qty > 0) {
+                                                  op.manualUnitPrice =
+                                                      total / qty;
+                                                }
 
-                                        setState(() {});
-                                      },
-
-                                      ),
-                                        ),
+                                                setState(() {});
+                                              },
+                                            ),
+                                          ),
                                         ),
                                         const SizedBox(width: _gap),
                                         SizedBox(
@@ -791,73 +800,92 @@ Widget _pickupChip(_PendingOp op, String value) {
                                           child: _fieldBox(
                                             label: 'Tipo',
                                             child: !_typesLoaded
-                                        ? const SizedBox(
-                                            height: 24,
-                                            child: Center(
-                                              child: CircularProgressIndicator(strokeWidth: 2),
-                                            ),
-                                          )
-                                        : DropdownButtonHideUnderline(
-                                            child: DropdownButton<String>(
-                                              
-                                              key: ValueKey('${op.garmentId}_${op.typeId}'),
-                                              value: (op.typeId != null && _operationTypes.any((t) => t['id'] == op.typeId))
-                                                  ? op.typeId
-                                                  : null,
-                                              hint: const Text('Seleziona'),
-                                              isDense: true,
-                                              items: _operationTypes.map((t) {
-                                                return DropdownMenuItem<String>(
-                                                  value: t['id'],
-                                                  child: Text(t['name']!),
-                                                );
-                                              }).toList(),
-                                              onChanged: (typeId) {
-                                                if (typeId == null) return;
+                                                ? const SizedBox(
+                                                    height: 24,
+                                                    child: Center(
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                              strokeWidth: 2),
+                                                    ),
+                                                  )
+                                                : DropdownButtonHideUnderline(
+                                                    child: DropdownButton<String>(
+                                                      key: ValueKey(
+                                                          '${op.garmentId}_${op.typeId}'),
+                                                      value: (op.typeId !=
+                                                                  null &&
+                                                              _operationTypes.any(
+                                                                  (t) =>
+                                                                      t['id'] ==
+                                                                      op.typeId))
+                                                          ? op.typeId
+                                                          : null,
+                                                      hint: const Text(
+                                                          'Seleziona'),
+                                                      isDense: true,
+                                                      items: _operationTypes
+                                                          .map((t) {
+                                                        return DropdownMenuItem<
+                                                            String>(
+                                                          value: t['id'],
+                                                          child:
+                                                              Text(t['name']!),
+                                                        );
+                                                      }).toList(),
+                                                      onChanged: (typeId) {
+                                                        if (typeId == null) return;
 
-                                                final type = _operationTypes.firstWhere((t) => t['id'] == typeId);
-                                                final typeName = type['name']!;
+                                                        final type =
+                                                            _operationTypes
+                                                                .firstWhere((t) =>
+                                                                    t['id'] ==
+                                                                    typeId);
+                                                        final typeName =
+                                                            type['name']!;
 
-                                                // 1) selezione IMMEDIATA (così la label cambia sempre)
-                                         setState(() {
-                                          op.typeId = typeId;
-                                          op.typeName = typeName;
-                                          op.priceManuallyEdited = false;
+                                                        setState(() {
+                                                          op.typeId = typeId;
+                                                          op.typeName = typeName;
+                                                          op.priceManuallyEdited =
+                                                              false;
+                                                          op.priceCtrl.text =
+                                                              _fmtEuro(0);
+                                                        });
 
-                                          // opzionale: mentre carica il prezzo, mostri 0 (o lasci invariato)
-                                          op.priceCtrl.text = _fmtEuro(0);
-                                        });
+                                                        () async {
+                                                          try {
+                                                            final prices =
+                                                                await _garmentService
+                                                                    .getPricesForGarment(
+                                                                        op.garmentId);
+                                                            final price =
+                                                                prices[typeId] ??
+                                                                    0;
 
-
-                                                // 2) poi provo a caricare il prezzo (se fallisce NON blocca la selezione)
-                                                () async {
-                                                  try {
-                                                  final prices = await _garmentService.getPricesForGarment(op.garmentId);
-                                                  final price = prices[typeId] ?? 0;
-
-                                                    if (!mounted) return;
-                                                    setState(() {
-                                                      // prezzo unitario da Firestore
-                                                      op.unitPrice = (price as num).toDouble();
-
-                                                      final qty = _qtyOf(op);
-                                                    op.manualUnitPrice = null;
-                                                    op.priceManuallyEdited = false;
-
-
-                                                      // totale riga
-                                                      op.priceCtrl.text = _fmtEuro(op.unitPrice * qty);
-                                                    });
-
-                                                  } catch (e) {
-                                                    // IMPORTANTISSIMO: non deve impedire la selezione
-                                                    if (!mounted) return;
-                                                    _toast('Prezzo non leggibile (rules/permessi): $e');
-                                                  }
-                                                }();
-                                              },
-                                            ),
-                                          ),
+                                                            if (!mounted) return;
+                                                            setState(() {
+                                                              op.unitPrice =
+                                                                  (price as num)
+                                                                      .toDouble();
+                                                              final qty =
+                                                                  _qtyOf(op);
+                                                              op.manualUnitPrice =
+                                                                  null;
+                                                              op.priceManuallyEdited =
+                                                                  false;
+                                                              op.priceCtrl.text =
+                                                                  _fmtEuro(op.unitPrice *
+                                                                      qty);
+                                                            });
+                                                          } catch (e) {
+                                                            if (!mounted) return;
+                                                            _toast(
+                                                                'Prezzo non leggibile (rules/permessi): $e');
+                                                          }
+                                                        }();
+                                                      },
+                                                    ),
+                                                  ),
                                           ),
                                         ),
                                         const SizedBox(width: _gap),
@@ -867,88 +895,90 @@ Widget _pickupChip(_PendingOp op, String value) {
                                             label: 'Rilascio',
                                             child: Text(
                                               _fmtDateTime(op.releaseDate),
-                                              style: const TextStyle(fontWeight: FontWeight.w700),
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.w700),
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ),
                                         const SizedBox(width: _gap),
-                                     
-                                          SizedBox(
-                                            width: _wRitiro,
-                                            child: _fieldBox(
-                                              label: 'Ritiro',
-                                              child: Row(
-                                                children: [
-                                                  // icona calendario
-                                                  InkWell(
-                                                    onTap: () async {
-                                                      final picked = await showDatePicker(
-                                                        context: context,
-                                                        initialDate: op.pickupDate,
-                                                        firstDate: DateTime.now(),
-                                                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                                        SizedBox(
+                                          width: _wRitiro,
+                                          child: _fieldBox(
+                                            label: 'Ritiro',
+                                            child: Row(
+                                              children: [
+                                                InkWell(
+                                                  onTap: () async {
+                                                    final picked =
+                                                        await showDatePicker(
+                                                      context: context,
+                                                      initialDate: op.pickupDate,
+                                                      firstDate: DateTime.now(),
+                                                      lastDate: DateTime.now()
+                                                          .add(const Duration(
+                                                              days: 365)),
+                                                    );
+                                                    if (picked == null) return;
+
+                                                    setState(() {
+                                                      op.pickupDate = DateTime(
+                                                        picked.year,
+                                                        picked.month,
+                                                        picked.day,
                                                       );
-                                                      if (picked == null) return;
-
-                                                      setState(() {
-                                                        op.pickupDate = DateTime(
-                                                          picked.year,
-                                                          picked.month,
-                                                          picked.day,
-                                                        );
-                                                      });
-                                                    },
-                                                    child: Icon(
-                                                      Icons.calendar_month,
-                                                      size: 20,
-                                                      color: Colors.grey.shade700,
+                                                    });
+                                                  },
+                                                  child: Icon(
+                                                    Icons.calendar_month,
+                                                    size: 20,
+                                                    color:
+                                                        Colors.grey.shade700,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child:
+                                                      DropdownButtonHideUnderline(
+                                                    child: DropdownButton<String>(
+                                                      value: op.pickupSlot,
+                                                      isDense: true,
+                                                      items: const [
+                                                        DropdownMenuItem(
+                                                          value: 'Mattina',
+                                                          child: Text('Mattina'),
+                                                        ),
+                                                        DropdownMenuItem(
+                                                          value: 'Pomeriggio',
+                                                          child:
+                                                              Text('Pomeriggio'),
+                                                        ),
+                                                      ],
+                                                      onChanged: (v) {
+                                                        if (v == null) return;
+                                                        setState(() =>
+                                                            op.pickupSlot = v);
+                                                      },
                                                     ),
                                                   ),
-
-                                                  const SizedBox(width: 10),
-
-                                                  Expanded(
-                                                    child: DropdownButtonHideUnderline(
-                                                      child: DropdownButton<String>(
-                                                        value: op.pickupSlot,
-                                                        isDense: true,
-                                                        items: const [
-                                                          DropdownMenuItem(
-                                                            value: 'Mattina',
-                                                            child: Text('Mattina'),
-                                                          ),
-                                                          DropdownMenuItem(
-                                                            value: 'Pomeriggio',
-                                                            child: Text('Pomeriggio'),
-                                                          ),
-                                                        ],
-                                                        onChanged: (v) {
-                                                          if (v == null) return;
-                                                          setState(() => op.pickupSlot = v);
-                                                        },
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                                                ),
+                                              ],
                                             ),
                                           ),
-
-
+                                        ),
                                         const SizedBox(width: 12),
                                         SizedBox(
                                           width: _wAddBtn,
                                           height: 44,
                                           child: ElevatedButton(
-                                          //onPressed: (op.typeId == null || _priceOf(op) <= 0) ? null : () => _addPendingToCart(i),
                                             onPressed: (op.typeId == null)
-                                              ? null
-                                              : () => _addPendingToCart(i),
-
+                                                ? null
+                                                : () => _addPendingToCart(i),
                                             style: ElevatedButton.styleFrom(
                                               shape: const StadiumBorder(),
-                                              padding: const EdgeInsets.symmetric(horizontal: 18),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 18),
                                             ),
                                             child: const Text('Aggiungi'),
                                           ),
@@ -958,16 +988,20 @@ Widget _pickupChip(_PendingOp op, String value) {
                                           width: _wDelBtn,
                                           height: 44,
                                           child: OutlinedButton(
-                                            onPressed: () => _removePendingAt(i),
+                                            onPressed: () =>
+                                                _removePendingAt(i),
                                             style: OutlinedButton.styleFrom(
                                               shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(12),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
                                               ),
                                               side: BorderSide(
-                                                color: Colors.red.withOpacity(0.35),
+                                                color: Colors.red
+                                                    .withOpacity(0.35),
                                               ),
                                             ),
-                                            child: const Icon(Icons.delete, color: Colors.red),
+                                            child: const Icon(Icons.delete,
+                                                color: Colors.red),
                                           ),
                                         ),
                                       ],
@@ -978,9 +1012,8 @@ Widget _pickupChip(_PendingOp op, String value) {
                             },
                           ),
                   ),
-
                   const SizedBox(height: 12),
-
+                  
                   Row(
                     children: [
                       OutlinedButton.icon(
@@ -988,8 +1021,10 @@ Widget _pickupChip(_PendingOp op, String value) {
                         icon: const Icon(Icons.shopping_cart_outlined),
                         label: Text('Carrello (${_cart.length})'),
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -998,14 +1033,17 @@ Widget _pickupChip(_PendingOp op, String value) {
                         icon: const Icon(Icons.print),
                         label: const Text('Stampa'),
                         style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
                       const Spacer(),
                       Text(
                         'Totale: € ${_total.toStringAsFixed(2)}',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w900),
                       ),
                     ],
                   ),
@@ -1018,35 +1056,33 @@ Widget _pickupChip(_PendingOp op, String value) {
     );
   }
 
- Widget _fieldBox({required String label, required Widget child}) {
-  return Container(
-    padding: const EdgeInsets.fromLTRB(12, 8, 12, 10), // ⬅ padding calibrato
-    decoration: BoxDecoration(
-      color: Colors.black.withOpacity(0.03),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.black.withOpacity(0.08)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min, // ⭐ CHIAVE
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.grey.shade700,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            height: 1.1, // ⬅ evita overflow del label
+  Widget _fieldBox({required String label, required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        child,
-      ],
-    ),
-  );
-}
-
-
+          const SizedBox(height: 4),
+          child,
+        ],
+      ),
+    );
+  }
 }
 
 class _PendingOp {
@@ -1059,9 +1095,9 @@ class _PendingOp {
   // prezzo unitario corrente (da Firestore per (garment,type))
   double unitPrice;
   double? manualUnitPrice;
-  // input modificabili
+
   final TextEditingController qtyCtrl;
-  final TextEditingController priceCtrl; // <-- totale riga (unitPrice * qty)
+  final TextEditingController priceCtrl;
 
   bool priceManuallyEdited;
 
@@ -1097,8 +1133,6 @@ class _PendingOp {
   }
 }
 
-
-
 class _CartItem {
   final String garmentId;
   final String garmentName;
@@ -1120,4 +1154,3 @@ class _CartItem {
     required this.pickupSlot,
   });
 }
-

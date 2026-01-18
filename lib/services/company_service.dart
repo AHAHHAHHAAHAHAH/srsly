@@ -1,17 +1,22 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CompanyService {
-  final _db = FirebaseFirestore.instance;
-  final String _collection = 'company';
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final String _collection = 'companies';
 
-  Future<DocumentSnapshot> getCompany() {
-    return _db.collection(_collection).doc('main').get();
+  Future<DocumentSnapshot<Map<String, dynamic>>> getCompany(String companyId) {
+    return _db.collection(_collection).doc(companyId).get();
   }
 
-  Future<void> updateCompany(String name) async {
-    await _db.collection(_collection).doc('main').set({
-      'name': name,
-      'updatedAt': Timestamp.now(),
-    });
+  Future<void> initIfMissing(String companyId) async {
+    final ref = _db.collection(_collection).doc(companyId);
+    final snap = await ref.get();
+
+    if (!snap.exists) {
+      await ref.set({
+        'nextTicketNumber': 0,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
   }
 }
