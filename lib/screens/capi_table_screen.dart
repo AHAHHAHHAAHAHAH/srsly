@@ -6,12 +6,19 @@ class CapiTableScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    if (clientId == null) {
+      return const Center(
+        child: Text(
+          'Tabella capi (da implementare)',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    return const Center(
       child: Text(
-        clientId == null
-            ? 'Seleziona un cliente (Home → click cliente)'
-            : 'Tabella capi per cliente: $clientId (da implementare)',
-        style: const TextStyle(color: Colors.grey),
+        'Tabella capi (da implementare)',
+        style: TextStyle(color: Colors.grey),
       ),
     );
   }

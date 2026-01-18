@@ -1,63 +1,102 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../core/auth_controller.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ClientService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  String get _companyId {
-    final id = AuthController.instance.companyId;
-    if (id == null) {
-      throw Exception('CompanyId non inizializzato');
+  Future<String> _getCompanyId() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('Utente non autenticato');
     }
-    return id;
-  }
 
-  CollectionReference<Map<String, dynamic>> get _col =>
-      _db.collection('clients');
+    final snap = await _db.collection('users').doc(user.uid).get();
+    if (!snap.exists) {
+      throw Exception('Profilo utente non trovato (users/${user.uid})');
+    }
+
+    final data = snap.data();
+    final companyId = data?['companyId'];
+
+    if (companyId == null || companyId is! String || companyId.trim().isEmpty) {
+      throw Exception('companyId mancante su users/${user.uid}');
+    }
+
+    return companyId;
+  }
 
   Future<void> addClient({
     required String fullName,
     required String number,
   }) async {
-    await _col.add({
-      'companyId': _companyId,
-      'fullName': fullName,
-      'fullNameLower': fullName.toLowerCase(),
-      'number': number,
-      'createdAt': Timestamp.now(),
+    final companyId = await _getCompanyId();
 
-      // NOTA: NON lo mettiamo nello storico subito.
-      // lastActivityAt verrà valorizzato quando fai un’operazione reale (ordine/scontrino).
-      'lastActivityAt': null,
-      'lastActivityLabel': null,
+    final fn = fullName.trim();
+    final num = number.trim();
+
+    await _db.collection('clients').add({
+      'companyId': companyId,
+      'fullName': fn,
+      'fullNameLowerCase': fn.toLowerCase(),
+      'number': num,
+      'createdAt': FieldValue.serverTimestamp(),
     });
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> searchClients(String query) {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return const Stream.empty();
+  /// ✅ chiamato SOLO al momento della STAMPA
+  Future<void> markClientServed({
+    required String clientId,
+    required String label,
+  }) async {
+    await _getCompanyId();
 
-    return _col
-        .where('companyId', isEqualTo: _companyId)
-        .orderBy('fullNameLower')
+    await _db.collection('clients').doc(clientId).update({
+      'lastActivityAt': FieldValue.serverTimestamp(),
+      'lastActivityLabel': label,
+    });
+  }
+
+  /// 🧹 Rimuove il cliente dallo STORICO (NON elimina il cliente)
+  Future<void> clearClientFromHistory(String clientId) async {
+    await _getCompanyId();
+
+    await _db.collection('clients').doc(clientId).update({
+      'lastActivityAt': FieldValue.delete(),
+      'lastActivityLabel': FieldValue.delete(),
+    });
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> searchClients(String query) async* {
+    final companyId = await _getCompanyId();
+    final q = query.trim().toLowerCase();
+
+    yield* _db
+        .collection('clients')
+        .where('companyId', isEqualTo: companyId)
+        .orderBy('fullNameLowerCase')
         .startAt([q])
         .endAt(['$q\uf8ff'])
         .snapshots();
   }
 
-  // Storico: SOLO clienti con lastActivityAt valorizzato
+  /// Storico = ultimi clienti SERVITI
   Stream<QuerySnapshot<Map<String, dynamic>>> getLastServedClients({
     int limit = 7,
-  }) {
-    return _col
-        .where('companyId', isEqualTo: _companyId)
-        .where('lastActivityAt', isNull: false)
+  }) async* {
+    final companyId = await _getCompanyId();
+
+    yield* _db
+        .collection('clients')
+        .where('companyId', isEqualTo: companyId)
         .orderBy('lastActivityAt', descending: true)
         .limit(limit)
         .snapshots();
   }
 
-  Future<DocumentSnapshot<Map<String, dynamic>>> getClientById(String id) {
-    return _col.doc(id).get();
+  Future<DocumentSnapshot<Map<String, dynamic>>> getClientById(
+    String clientId,
+  ) {
+    return _db.collection('clients').doc(clientId).get();
   }
 }

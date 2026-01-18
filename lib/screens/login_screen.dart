@@ -16,7 +16,16 @@ class _LoginScreenState extends State<LoginScreen> {
   bool loading = false;
   String? error;
 
+  @override
+  void dispose() {
+    emailCtrl.dispose();
+    passCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _login() async {
+    if (!mounted) return;
+
     setState(() {
       loading = true;
       error = null;
@@ -27,10 +36,13 @@ class _LoginScreenState extends State<LoginScreen> {
         emailCtrl.text.trim(),
         passCtrl.text.trim(),
       );
+      // NIENTE setState qui: AuthGate cambierà schermata da solo via stream
     } catch (_) {
+      if (!mounted) return;
       setState(() => error = 'Credenziali non valide');
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (!mounted) return;
+      setState(() => loading = false);
     }
   }
 
@@ -44,11 +56,10 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Yo what S up man?',
+                'Yo what S Up man?',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 24),
-
               TextField(
                 controller: emailCtrl,
                 decoration: const InputDecoration(labelText: 'Email'),
@@ -60,12 +71,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 decoration: const InputDecoration(labelText: 'Password'),
               ),
               const SizedBox(height: 16),
-
               if (error != null)
                 Text(error!, style: const TextStyle(color: Colors.red)),
-
               const SizedBox(height: 12),
-
               ElevatedButton(
                 onPressed: loading ? null : _login,
                 child: loading
@@ -76,9 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       )
                     : const Text('Accedi'),
               ),
-
               const SizedBox(height: 12),
-
               TextButton(
                 onPressed: () {
                   Navigator.push(

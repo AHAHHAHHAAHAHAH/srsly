@@ -11,53 +11,52 @@ class SettingsScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Impostazioni',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+          // header + account
+          Row(
+            children: [
+              const Text(
+                'Impostazioni',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              StreamBuilder(
+                stream: AuthController.instance.authState,
+                builder: (context, snapshot) {
+                  final email = snapshot.data?.email ?? AuthController.instance.email ?? '-';
+                  return Text.rich(
+                    TextSpan(
+                      children: [
+                        const TextSpan(
+                          text: 'Utente loggato: ',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                        TextSpan(
+                          text: email,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
 
-          // ===== LOGOUT BUTTON (DANGER)
-          SizedBox(
-            width: 120,
-            height: 36,
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.logout),
-              label: const Text(
-                'Logout',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.4,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade600,
-                foregroundColor: Colors.white,
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ).copyWith(
-                overlayColor: MaterialStateProperty.resolveWith(
-                  (states) {
-                    if (states.contains(MaterialState.hovered)) {
-                      return Colors.red.shade700.withOpacity(0.15);
-                    }
-                    if (states.contains(MaterialState.pressed)) {
-                      return Colors.red.shade900.withOpacity(0.25);
-                    }
-                    return null;
-                  },
-                ),
-              ),
-              onPressed: () async {
-                await AuthController.instance.logout();
-              },
+          // logout rosso e "più figo"
+          ElevatedButton.icon(
+            icon: const Icon(Icons.logout),
+            label: const Text('Logout'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
+            onPressed: () async {
+              await AuthController.instance.logout();
+            },
           ),
 
           const Spacer(),

@@ -33,6 +33,72 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _confirmRemoveFromHistory(String clientId, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Rimuovi dallo storico'),
+        content: Text('Vuoi rimuovere "$name" dallo storico clienti?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Rimuovi'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      await _clientService.clearClientFromHistory(clientId);
+    }
+  }
+
+  /// 📅 + 🕒 formato: DD/MM/YYYY · HH:mm
+  String _formatDateTime(dynamic ts) {
+    if (ts == null) return '—';
+    try {
+      final d = ts.toDate();
+      final day = d.day.toString().padLeft(2, '0');
+      final month = d.month.toString().padLeft(2, '0');
+      final year = d.year;
+      final hour = d.hour.toString().padLeft(2, '0');
+      final minute = d.minute.toString().padLeft(2, '0');
+      return '$day/$month/$year · $hour:$minute';
+    } catch (_) {
+      return '—';
+    }
+  }
+
+  Widget _label(String text) => Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12.5,
+          color: Colors.grey,
+          fontWeight: FontWeight.w600,
+          height: 1.1,
+        ),
+      );
+
+  Widget _value(String text) => Text(
+        text,
+        style: const TextStyle(
+          fontSize: 15.5,
+          fontWeight: FontWeight.w800,
+          height: 1.2,
+        ),
+      );
+
+  BoxDecoration _pillBox() => BoxDecoration(
+        color: Colors.black.withOpacity(0.035),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -41,51 +107,29 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // =========================
-          // BLOCCO SUPERIORE (ALTEZZA FISSA)
+          // RICERCA CLIENTI
           // =========================
           Container(
-            height: 420, // 🔥 ALTEZZA FISSA = layout stabile
+            height: 420,
             padding: const EdgeInsets.all(18),
             decoration: _box(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: const [
-                    Icon(Icons.search, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Ricerca clienti',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+                const Text(
+                  'Ricerca clienti',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
-
                 const SizedBox(height: 10),
-
                 TextField(
                   controller: _searchCtrl,
                   onChanged: _onSearch,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: 'Scrivi nome cliente',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() => _query = '');
-                            },
-                          ),
+                    border: OutlineInputBorder(),
                   ),
                 ),
-
                 const SizedBox(height: 10),
-
                 ElevatedButton.icon(
                   icon: const Icon(Icons.person_add),
                   label: const Text('Nuovo cliente'),
@@ -97,51 +141,48 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                 ),
-
                 const SizedBox(height: 10),
-
-                // ===== RISULTATI (scroll solo qui)
                 Expanded(
                   child: _query.isEmpty
                       ? const SizedBox()
                       : StreamBuilder(
-                          stream:
-                              _clientService.searchClients(_query),
+                          stream: _clientService.searchClients(_query),
                           builder: (context, snapshot) {
-                            if (snapshot.hasError) {
-                              return Text(
-                                'Errore: ${snapshot.error}',
-                                style:
-                                    const TextStyle(color: Colors.red),
-                              );
-                            }
-
                             if (!snapshot.hasData) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
+                              return const Center(child: CircularProgressIndicator());
                             }
 
                             final docs = snapshot.data!.docs;
                             if (docs.isEmpty) {
-                              return const Text(
-                                  'Nessun cliente trovato');
+                              return const Text('Nessun cliente trovato');
                             }
 
                             return ListView.builder(
                               itemCount: docs.length,
                               itemBuilder: (context, i) {
-                                final c = docs[i].data();
+                                final doc = docs[i];
+                                final d = doc.data();
                                 return ListTile(
-                                  title:
-                                      Text(c['fullName'] ?? ''),
+                                  dense: true,
+                                  title: Text(
+                                      d['fullName'],
+                                      style: const TextStyle(
+                                        fontSize: 16, // 👈 cambia qui
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
                                   subtitle: Text(
-                                      c['number'] ?? ''),
+                                      d['number'],
+                                      style: const TextStyle(
+                                        fontSize: 14.5, // 👈 cambia qui
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
                                   onTap: () {
-                                    AppShell.of(context)
-                                        .goToSection(
+                                    AppShell.of(context).goToSectionForClient(
                                       AppSection.capi,
-                                      clientId: docs[i].id,
+                                      clientId: doc.id,
                                     );
                                   },
                                 );
@@ -157,10 +198,9 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 18),
 
           // =========================
-          // STORICO CLIENTI (RIEMPIE IL RESTO)
+          // STORICO CLIENTI
           // =========================
           Flexible(
-            fit: FlexFit.loose, // 🔥 NON Expanded
             child: Container(
               padding: const EdgeInsets.all(18),
               decoration: _box(),
@@ -168,19 +208,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Storico Clienti',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    'Storico Clienti (ultimi 7)',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(height: 10),
-
-                  Flexible(
-                    fit: FlexFit.loose,
+                  const SizedBox(height: 12),
+                  Expanded(
                     child: StreamBuilder(
-                      stream: _clientService
-                          .getLastServedClients(limit: 7),
+                      stream: _clientService.getLastServedClients(limit: 7),
                       builder: (context, snapshot) {
                         if (!snapshot.hasData) {
                           return const SizedBox();
@@ -190,43 +224,76 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (docs.isEmpty) {
                           return const Text(
                             'Nessuna operazione recente',
-                            style:
-                                TextStyle(color: Colors.grey),
+                            style: TextStyle(color: Colors.grey),
                           );
                         }
 
-                        return ListView.separated(
+                        return ListView.builder(
                           itemCount: docs.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 1),
                           itemBuilder: (context, i) {
-                            final c = docs[i].data();
-                            return Row(
-                              children: [
-                                Expanded(
-                                    child:
-                                        Text(c['fullName'] ?? '')),
-                                Expanded(
-                                    child:
-                                        Text(c['number'] ?? '')),
-                                Expanded(
-                                    child: Text(
-                                  c['lastActivityLabel'] ?? '',
-                                  style: const TextStyle(
-                                      color: Colors.grey),
-                                )),
-                                TextButton(
-                                  onPressed: () {
-                                    AppShell.of(context)
-                                        .goToSection(
-                                      AppSection.ordini,
-                                      clientId: docs[i].id,
-                                    );
-                                  },
-                                  child:
-                                      const Text('ORDINE'),
+                            final doc = docs[i];
+                            final c = doc.data();
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 12,
                                 ),
-                              ],
+                                decoration: _pillBox(),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          _label('Nome e cognome'),
+                                          _value(c['fullName'] ?? ''),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 2,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          _label('Numero'),
+                                          _value(c['number'] ?? ''),
+                                        ],
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          _label('Data e ora ultimo ordine'),
+                                          _value(_formatDateTime(c['lastActivityAt'])),
+                                        ],
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        AppShell.of(context).goToSectionForClient(
+                                          AppSection.ordini,
+                                          clientId: doc.id,
+                                        );
+                                      },
+                                      child: const Text('ORDINI'),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      tooltip: 'Rimuovi dallo storico',
+                                      onPressed: () => _confirmRemoveFromHistory(
+                                        doc.id,
+                                        c['fullName'] ?? '',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             );
                           },
                         );
