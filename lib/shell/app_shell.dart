@@ -60,33 +60,39 @@ class _AppShellState extends State<AppShell> {
     return companyId;
   }
 
-  Future<_HeaderData?> _loadHeaderData() async {
-    final clientId = _activeClientId;
-    if (clientId == null) return null;
+ int? get currentPreviewTicket => _lastHeaderPreview;
+int? _lastHeaderPreview;
 
-    final clientSnap = await _db.collection('clients').doc(clientId).get();
-    final clientData = clientSnap.data();
-    if (clientData == null) return null;
+Future<_HeaderData?> _loadHeaderData() async {
+  final clientId = _activeClientId;
+  if (clientId == null) return null;
 
-    final fullName = (clientData['fullName'] ?? '') as String;
-    final phone = (clientData['number'] ?? '') as String;
+  final clientSnap = await _db.collection('clients').doc(clientId).get();
+  final clientData = clientSnap.data();
+  if (clientData == null) return null;
 
-    final companyId = await _getCompanyId();
-    final companySnap = await _db.collection('companies').doc(companyId).get();
-    final companyData = companySnap.data() ?? {};
+  final fullName = (clientData['fullName'] ?? '') as String;
+  final phone = (clientData['number'] ?? '') as String;
 
-    final current = companyData['nextTicketNumber'];
-    final int currentN = (current is int) ? current : 0;
+  final companyId = await _getCompanyId();
+  final companySnap = await _db.collection('companies').doc(companyId).get();
+  final companyData = companySnap.data() ?? {};
 
-    // Preview = prossimo numero che verrà assegnato alla stampa
-    final int preview = currentN + 1;
+  final current = companyData['nextTicketNumber'];
+  final int currentN = (current is int) ? current : 0;
 
-    return _HeaderData(
-      fullName: fullName,
-      phone: phone,
-      previewNumber: preview,
-    );
-  }
+  final int preview = currentN + 1;
+
+  // ✅ memorizzo l'ultimo preview calcolato
+  _lastHeaderPreview = preview;
+
+  return _HeaderData(
+    fullName: fullName,
+    phone: phone,
+    previewNumber: preview,
+  );
+}
+
 
 Widget _headerBar() {
   // Se non c'è cliente attivo, niente header (zero spazio).

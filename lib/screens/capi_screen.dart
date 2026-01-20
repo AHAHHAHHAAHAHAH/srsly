@@ -12,6 +12,10 @@ import '../shell/app_shell.dart' show AppSection;
 
 import 'add_garment_dialog.dart';
 import 'add_operation_for_garment_dialog.dart';
+import '../printing/print_models.dart';
+import '../printing/print_service.dart';
+import '../printing/receipt_builder.dart';
+import '../printing/print_preview_dialog.dart';
 
 class CapiScreen extends StatefulWidget {
   final String? clientId;
@@ -30,6 +34,10 @@ class _CapiScreenState extends State<CapiScreen> {
 
   List<Map<String, String>> _operationTypes = [];
   bool _typesLoaded = false;
+  bool _isPrinting = false;
+  final TextEditingController _depositCtrl = TextEditingController(text: '0,00');
+  bool _isPaid = false;
+
 
   // Search
   final _searchCtrl = TextEditingController();
@@ -116,6 +124,8 @@ class _CapiScreenState extends State<CapiScreen> {
   void dispose() {
     _debounce?.cancel();
     _searchCtrl.dispose();
+    _depositCtrl.dispose();
+
     for (final p in _pending) {
       p.dispose();
     }
@@ -140,6 +150,16 @@ class _CapiScreenState extends State<CapiScreen> {
         .replaceAll(',', '.');
     return double.tryParse(t);
   }
+  double _depositValue() {
+  final v = _parseEuro(_depositCtrl.text) ?? 0;
+  return v < 0 ? 0 : v;
+}
+
+double _remainingTotal() {
+  final r = _total - _depositValue();
+  return r < 0 ? 0 : r;
+}
+
 
   String _fmtEuro(double v) => '€ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
 
@@ -431,64 +451,156 @@ class _CapiScreenState extends State<CapiScreen> {
     );
   }
 
-  Future<void> _printAndClose() async {
-    if (_cart.isEmpty) {
-      _toast('Carrello vuoto');
-      return;
-    }
+Future<void> _printAndClose() async {
+  if (_isPrinting) return;
 
-    if (widget.clientId == null) {
-      _toast('Cliente non valido');
-      return;
-    }
-
-    try {
-      final clientSnap = await ClientService().getClientById(widget.clientId!);
-      final client = clientSnap.data()!;
-
-      final orderItems = _cart.map((c) {
-        return {
-          'garmentId': c.garmentId,
-          'garmentName': c.garmentName,
-          'qty': c.qty,
-          'unitPrice': c.price,
-          'lineTotal': c.price * c.qty,
-          'operationTypeName': c.type,
-          'releaseDate': Timestamp.fromDate(c.releaseDate),
-          'pickupDate': Timestamp.fromDate(c.pickupDate),
-          'pickupSlot': c.pickupSlot,
-        };
-      }).toList();
-
-      await OrderService().createOrder(
-        clientId: widget.clientId!,
-        clientName: client['fullName'],
-        clientPhone: client['number'],
-        items: orderItems,
-      );
-
-      await _clientService.markClientServed(
-        clientId: widget.clientId!,
-        label: 'Scontrino',
-      );
-
-      // pulizia locale
-      setState(() {
-        _cart.clear();
-        for (final p in _pending) {
-          p.dispose();
-        }
-        _pending.clear();
-        _searchCtrl.clear();
-        _query = '';
-      });
-
-      _toast('Operazione conclusa');
-      AppShell.of(context).goToSection(AppSection.home);
-    } catch (e) {
-      _toast('Errore salvataggio ordine: $e');
-    }
+  if (_cart.isEmpty) {
+    _toast('Carrello vuoto');
+    return;
   }
+  if (widget.clientId == null) {
+    _toast('Cliente non valido');
+    return;
+  }
+
+  setState(() => _isPrinting = true);
+
+  // ✅ copia IMMUTABILE del carrello (non usare _cart dopo clear)
+  final cartCopy = List<_CartItem>.from(_cart);
+  final totalCopy = cartCopy.fold(0.0, (s, x) => s + (x.price * x.qty));
+
+  try {
+    final clientSnap = await ClientService().getClientById(widget.clientId!);
+    final client = clientSnap.data();
+    if (client == null) {
+      _toast('Cliente non trovato');
+      return;
+    }
+
+    // ✅ ticket PREVIEW = +1
+final previewTicket = AppShell.of(context).currentPreviewTicket;
+if (previewTicket == null) {
+  _toast('Preview ticket non disponibile (header non caricato)');
+  return;
+}
+
+    // ✅ dati per preview
+    final previewData = PrintOrderData(
+      ticketNumber: previewTicket,
+      clientName: (client['fullName'] ?? '') as String,
+      clientPhone: (client['number'] ?? '') as String,
+      createdAt: DateTime.now(),
+      pickupDate: cartCopy.first.pickupDate,
+      pickupSlot: cartCopy.first.pickupSlot,
+      items: cartCopy.map((c) => PrintOrderItem(
+        garmentName: c.garmentName,
+        qty: c.qty,
+        price: c.price,
+      )).toList(),
+      deposit: _depositValue(),
+      isPaid: _isPaid,
+      total: totalCopy,
+    );
+    
+
+    // ✅ PREVIEW + conferma
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PrintPreviewDialog(data: previewData), // te lo definisco sotto
+    );
+
+    if (confirmed != true) {
+      _toast('Stampa annullata');
+      return;
+    }
+
+    // ✅ SOLO ORA: scrittura su Firestore
+    final orderItems = cartCopy.map((c) {
+      return {
+        'garmentId': c.garmentId,
+        'garmentName': c.garmentName,
+        'qty': c.qty,
+        'unitPrice': c.price,
+        'lineTotal': c.price * c.qty,
+        'operationTypeName': c.type,
+        'releaseDate': Timestamp.fromDate(c.releaseDate),
+        'pickupDate': Timestamp.fromDate(c.pickupDate),
+        'pickupSlot': c.pickupSlot,
+      };
+    }).toList();
+
+    final int ticketNumber = await OrderService().createOrder(
+      clientId: widget.clientId!,
+      clientName: (client['fullName'] ?? '') as String,
+      clientPhone: (client['number'] ?? '') as String,
+      deposit: _depositValue(),
+      isPaid: _isPaid,
+      items: orderItems,
+    );
+    final printData = PrintOrderData(
+  ticketNumber: ticketNumber,
+  clientName: (client['fullName'] ?? '') as String,
+  clientPhone: (client['number'] ?? '') as String,
+  createdAt: DateTime.now(),
+  pickupDate: _cart.first.pickupDate,
+  pickupSlot: _cart.first.pickupSlot,
+  items: _cart.map((c) => PrintOrderItem(
+    garmentName: c.garmentName,
+    qty: c.qty,
+    price: c.price,
+  )).toList(),
+  total: _total,
+  deposit: _depositValue(),
+  isPaid: _isPaid,
+);
+
+await PrintService.printAll(printData);
+
+
+    // ✅ sicurezza: se per qualche motivo non coincide (race), stampi quello reale
+    final finalData = PrintOrderData(
+      ticketNumber: ticketNumber,
+      clientName: previewData.clientName,
+      clientPhone: previewData.clientPhone,
+      createdAt: previewData.createdAt,
+      pickupDate: previewData.pickupDate,
+      pickupSlot: previewData.pickupSlot,
+      items: previewData.items,
+      deposit: _depositValue(),
+isPaid: _isPaid,
+
+      total: previewData.total,
+      
+    );
+
+    await PrintService.printAll(finalData);
+
+    await _clientService.markClientServed(
+      clientId: widget.clientId!,
+      label: 'Scontrino',
+    );
+
+    setState(() {
+      _cart.clear();
+      for (final p in _pending) { p.dispose(); }
+      _pending.clear();
+      _searchCtrl.clear();
+      _query = '';
+    });
+
+    _toast('Operazione conclusa');
+    AppShell.of(context).goToSection(AppSection.home);
+
+  } catch (e) {
+    _toast('Errore salvataggio ordine: $e');
+  } finally {
+    if (mounted) setState(() => _isPrinting = false);
+  }
+}
+
+
+
 
   BoxDecoration _box() => BoxDecoration(
         color: Colors.white,
@@ -1029,9 +1141,10 @@ class _CapiScreenState extends State<CapiScreen> {
                       ),
                       const SizedBox(width: 14),
                       ElevatedButton.icon(
-                        onPressed: _cart.isEmpty ? null : _printAndClose,
+                        onPressed: (_cart.isEmpty || _isPrinting) ? null : _printAndClose,
                         icon: const Icon(Icons.print),
                         label: const Text('Stampa'),
+                        
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 18, vertical: 12),
@@ -1039,12 +1152,49 @@ class _CapiScreenState extends State<CapiScreen> {
                               borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
-                      const Spacer(),
-                      Text(
-                        'Totale: € ${_total.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w900),
+                      SizedBox(
+                        width: 160,
+                        child: TextField(
+                          controller: _depositCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Acconto',
+                            prefixText: '€ ',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
                       ),
+                      const SizedBox(width: 10),
+                      IconButton(
+                        tooltip: _isPaid ? 'Pagato' : 'Da pagare',
+                        onPressed: () => setState(() => _isPaid = !_isPaid),
+                        icon: Icon(
+                          _isPaid ? Icons.check_circle : Icons.cancel,
+                          color: _isPaid ? Colors.green : Colors.red,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+
+                      const Spacer(),
+                     Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Totale: € ${_total.toStringAsFixed(2)}',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          'Rimanenza: € ${_remainingTotal().toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.black.withOpacity(0.6),
+                          ),
+                        ),
+                      ],
+                    ),
                     ],
                   ),
                 ],
