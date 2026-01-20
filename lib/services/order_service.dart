@@ -5,10 +5,6 @@ class OrderService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // =========================
-  // HELPERS
-  // =========================
-
   Future<String> _getCompanyId() async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -26,32 +22,37 @@ class OrderService {
     return companyId;
   }
 
-  // =========================
-  // API PRINCIPALE (ANTI-ABORT)
-  // =========================
-
   Future<int> createOrder({
     required String clientId,
     required String clientName,
     required String clientPhone,
     required List<Map<String, dynamic>> items,
+    required double deposit,
+    required bool isPaid,
   }) async {
     final companyId = await _getCompanyId();
     final companyRef = _db.collection('companies').doc(companyId);
 
-    // 1️⃣ Incremento atomico (NO transaction → NO abort)
+    // 1) Leggo SEMPRE da server l'ultimo numero assegnato
+    final companySnap = await companyRef.get(
+      const GetOptions(source: Source.server),
+    );
+    final companyData = companySnap.data() ?? {};
+
+    final lastIssued = (companyData['nextTicketNumber'] is int)
+        ? companyData['nextTicketNumber'] as int
+        : 0;
+
+    // 2) Il nuovo ticket è last + 1
+    final ticketNumber = lastIssued + 1;
+
+    // 3) Aggiorno il contatore (lastIssued = ticketNumber)
     await companyRef.set(
-      {'nextTicketNumber': FieldValue.increment(1)},
+      {'nextTicketNumber': ticketNumber},
       SetOptions(merge: true),
     );
 
-    // 2️⃣ Rileggo valore aggiornato
-    final snap = await companyRef.get();
-    final data = snap.data() ?? {};
-    final int ticketNumber =
-        (data['nextTicketNumber'] is int) ? data['nextTicketNumber'] as int : 1;
-
-    // 3️⃣ Creo ordine
+    // 4) Creo ordine con quel ticket
     await _db.collection('orders').add({
       'companyId': companyId,
       'clientId': clientId,
@@ -60,12 +61,13 @@ class OrderService {
       'ticketNumber': ticketNumber,
       'partitaNumber': ticketNumber,
       'items': items,
+      'deposit': deposit,
+      'isPaid': isPaid,
       'createdAt': FieldValue.serverTimestamp(),
     });
 
     return ticketNumber;
   }
 
-  // Utility
   static Timestamp ts(DateTime d) => Timestamp.fromDate(d);
 }
