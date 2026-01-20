@@ -8,7 +8,7 @@ class OrderService {
   // =========================
   // HELPERS
   // =========================
-
+//IDK what this is
   Future<String> _getCompanyId() async {
     final user = _auth.currentUser;
     if (user == null) {
