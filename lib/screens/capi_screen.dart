@@ -38,6 +38,22 @@ class _CapiScreenState extends State<CapiScreen> {
   final TextEditingController _depositCtrl = TextEditingController(text: '0,00');
   bool _isPaid = false;
 
+  double _deposit = 0.0;
+  double get _remaining {
+    final r = _total - _deposit;
+    return r < 0 ? 0 : r;
+  }
+
+double _parseEuroToDouble(String s) {
+  final t = s
+      .trim()
+      .replaceAll('€', '')
+      .replaceAll(' ', '')
+      .replaceAll(',', '.');
+  return double.tryParse(t) ?? 0.0;
+}
+
+
 
   // Search
   final _searchCtrl = TextEditingController();
@@ -125,7 +141,7 @@ class _CapiScreenState extends State<CapiScreen> {
     _debounce?.cancel();
     _searchCtrl.dispose();
     _depositCtrl.dispose();
-
+    
     for (final p in _pending) {
       p.dispose();
     }
@@ -465,9 +481,11 @@ Future<void> _printAndClose() async {
 
   setState(() => _isPrinting = true);
 
-  // ✅ copia IMMUTABILE del carrello (non usare _cart dopo clear)
+  // ✅ copie IMMUTABILI (non usare _cart dopo)
   final cartCopy = List<_CartItem>.from(_cart);
-  final totalCopy = cartCopy.fold(0.0, (s, x) => s + (x.price * x.qty));
+  final  totalCopy = cartCopy.fold(0.0, (s, x) => s + (x.price * x.qty));
+  final depositCopy = _depositValue();
+  final isPaidCopy = _isPaid;
 
   try {
     final clientSnap = await ClientService().getClientById(widget.clientId!);
@@ -477,14 +495,14 @@ Future<void> _printAndClose() async {
       return;
     }
 
-    // ✅ ticket PREVIEW = +1
-final previewTicket = AppShell.of(context).currentPreviewTicket;
-if (previewTicket == null) {
-  _toast('Preview ticket non disponibile (header non caricato)');
-  return;
-}
+    // ✅ ticket PREVIEW (+1 già calcolato dall’header AppShell)
+    final previewTicket = AppShell.of(context).currentPreviewTicket;
+    if (previewTicket == null) {
+      _toast('Preview ticket non disponibile (header non caricato)');
+      return;
+    }
 
-    // ✅ dati per preview
+    // ✅ dati PREVIEW (usa SOLO cartCopy)
     final previewData = PrintOrderData(
       ticketNumber: previewTicket,
       clientName: (client['fullName'] ?? '') as String,
@@ -492,22 +510,23 @@ if (previewTicket == null) {
       createdAt: DateTime.now(),
       pickupDate: cartCopy.first.pickupDate,
       pickupSlot: cartCopy.first.pickupSlot,
-      items: cartCopy.map((c) => PrintOrderItem(
-        garmentName: c.garmentName,
-        qty: c.qty,
-        price: c.price,
-      )).toList(),
-      deposit: _depositValue(),
-      isPaid: _isPaid,
+      items: cartCopy
+          .map((c) => PrintOrderItem(
+                garmentName: c.garmentName,
+                qty: c.qty,
+                price: c.price,
+              ))
+          .toList(),
+      deposit: depositCopy,
+      isPaid: isPaidCopy,
       total: totalCopy,
     );
-    
 
     // ✅ PREVIEW + conferma
     final bool? confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => PrintPreviewDialog(data: previewData), // te lo definisco sotto
+      builder: (_) => PrintPreviewDialog(data: previewData),
     );
 
     if (confirmed != true) {
@@ -515,7 +534,7 @@ if (previewTicket == null) {
       return;
     }
 
-    // ✅ SOLO ORA: scrittura su Firestore
+    // ✅ SOLO ORA: preparo items per Firestore (sempre da cartCopy)
     final orderItems = cartCopy.map((c) {
       return {
         'garmentId': c.garmentId,
@@ -530,35 +549,18 @@ if (previewTicket == null) {
       };
     }).toList();
 
+    // ✅ salva ordine e ottieni ticket REALE salvato
     final int ticketNumber = await OrderService().createOrder(
       clientId: widget.clientId!,
       clientName: (client['fullName'] ?? '') as String,
       clientPhone: (client['number'] ?? '') as String,
-      deposit: _depositValue(),
-      isPaid: _isPaid,
       items: orderItems,
+      deposit: depositCopy,
+      isPaid: isPaidCopy,
+      total: totalCopy, // ✅ IMPORTANTISSIMO: lo salviamo anche qui
     );
-    final printData = PrintOrderData(
-  ticketNumber: ticketNumber,
-  clientName: (client['fullName'] ?? '') as String,
-  clientPhone: (client['number'] ?? '') as String,
-  createdAt: DateTime.now(),
-  pickupDate: _cart.first.pickupDate,
-  pickupSlot: _cart.first.pickupSlot,
-  items: _cart.map((c) => PrintOrderItem(
-    garmentName: c.garmentName,
-    qty: c.qty,
-    price: c.price,
-  )).toList(),
-  total: _total,
-  deposit: _depositValue(),
-  isPaid: _isPaid,
-);
 
-await PrintService.printAll(printData);
-
-
-    // ✅ sicurezza: se per qualche motivo non coincide (race), stampi quello reale
+    // ✅ stampo con ticket REALE
     final finalData = PrintOrderData(
       ticketNumber: ticketNumber,
       clientName: previewData.clientName,
@@ -567,11 +569,9 @@ await PrintService.printAll(printData);
       pickupDate: previewData.pickupDate,
       pickupSlot: previewData.pickupSlot,
       items: previewData.items,
-      deposit: _depositValue(),
-isPaid: _isPaid,
-
-      total: previewData.total,
-      
+      deposit: depositCopy,
+      isPaid: isPaidCopy,
+      total: totalCopy,
     );
 
     await PrintService.printAll(finalData);
@@ -581,23 +581,30 @@ isPaid: _isPaid,
       label: 'Scontrino',
     );
 
+    // ✅ reset UI (anche acconto/pagato)
     setState(() {
       _cart.clear();
-      for (final p in _pending) { p.dispose(); }
+      for (final p in _pending) {
+        p.dispose();
+      }
       _pending.clear();
       _searchCtrl.clear();
       _query = '';
+
+      _depositCtrl.text = '0,00';
+      _deposit = 0.0;
+      _isPaid = false;
     });
 
     _toast('Operazione conclusa');
     AppShell.of(context).goToSection(AppSection.home);
-
   } catch (e) {
     _toast('Errore salvataggio ordine: $e');
   } finally {
     if (mounted) setState(() => _isPrinting = false);
   }
 }
+
 
 
 
@@ -1127,76 +1134,77 @@ isPaid: _isPaid,
                   const SizedBox(height: 12),
                   
                   Row(
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _openCart,
-                        icon: const Icon(Icons.shopping_cart_outlined),
-                        label: Text('Carrello (${_cart.length})'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _openCart,
+                      icon: const Icon(Icons.shopping_cart_outlined),
+                      label: Text('Carrello (${_cart.length})'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      const SizedBox(width: 14),
-                      ElevatedButton.icon(
-                        onPressed: (_cart.isEmpty || _isPrinting) ? null : _printAndClose,
-                        icon: const Icon(Icons.print),
-                        label: const Text('Stampa'),
-                        
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 18, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 160,
-                        child: TextField(
-                          controller: _depositCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            labelText: 'Acconto',
-                            prefixText: '€ ',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      IconButton(
-                        tooltip: _isPaid ? 'Pagato' : 'Da pagare',
-                        onPressed: () => setState(() => _isPaid = !_isPaid),
-                        icon: Icon(
-                          _isPaid ? Icons.check_circle : Icons.cancel,
-                          color: _isPaid ? Colors.green : Colors.red,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-
-                      const Spacer(),
-                     Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          'Totale: € ${_total.toStringAsFixed(2)}',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          'Rimanenza: € ${_remainingTotal().toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.black.withOpacity(0.6),
-                          ),
-                        ),
-                      ],
                     ),
-                    ],
-                  ),
+                    const SizedBox(width: 14),
+                    ElevatedButton.icon(
+                      onPressed: (_cart.isEmpty || _isPrinting) ? null : _printAndClose,
+                      icon: const Icon(Icons.print),
+                      label: const Text('Stampa'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+
+                    const Spacer(),
+
+                    Text(
+                      'Totale: € ${_total.toStringAsFixed(2).replaceAll('.', ',')}',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(width: 14),
+
+                    SizedBox(
+                      width: 150,
+                      child: TextField(
+                        controller: _depositCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: 'Acconto',
+                          prefixText: '€ ',
+                          isDense: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onChanged: (v) {
+                          setState(() => _deposit = _parseEuroToDouble(v));
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+
+                    InkWell(
+                      onTap: () => setState(() => _isPaid = !_isPaid),
+                      borderRadius: BorderRadius.circular(999),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _isPaid ? Colors.green : Colors.red,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'PAGATO',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+
+                    Text(
+                      'Rimanenza: € ${_remaining.toStringAsFixed(2).replaceAll('.', ',')}',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+
                 ],
               ),
             ),

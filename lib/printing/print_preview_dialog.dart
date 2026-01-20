@@ -61,9 +61,34 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
                     icon: Icons.sell_outlined,
                   ),
                   const Spacer(),
-                  _pill(
-                    'Totale: € ${d.total.toStringAsFixed(2).replaceAll('.', ',')}',
-                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.black.withOpacity(0.10)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Totale: € ${_euro(widget.data.total)}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Acconto: € ${_euro(_safeDeposit(widget.data))}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Rimanenza: € ${_euro(_remaining(widget.data))}',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                  )
                 ],
               ),
             ),
@@ -107,6 +132,21 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
       ),
     );
   }
+
+  String _euro(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
+
+double _safeDeposit(PrintOrderData d) {
+  final dep = d.deposit;
+  if (dep.isNaN || dep.isInfinite || dep < 0) return 0.0;
+  if (dep > d.total) return d.total; // opzionale: clamp al totale
+  return dep;
+}
+
+double _remaining(PrintOrderData d) {
+  final r = d.total - _safeDeposit(d);
+  return r < 0 ? 0.0 : r;
+}
+
 
   Widget _header(PrintOrderData d) {
     return Padding(

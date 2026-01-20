@@ -27,6 +27,7 @@ class OrderService {
     required String clientName,
     required String clientPhone,
     required List<Map<String, dynamic>> items,
+    required double total,
     required double deposit,
     required bool isPaid,
   }) async {
@@ -51,6 +52,17 @@ class OrderService {
       {'nextTicketNumber': ticketNumber},
       SetOptions(merge: true),
     );
+final double total = items.fold(0.0, (s, it) {
+  final qty = (it['qty'] as num?)?.toInt() ?? 0;
+
+  // se hai già lineTotal calcolato lato UI, usalo (è il più sicuro)
+  final lineTotal = (it['lineTotal'] as num?)?.toDouble();
+  if (lineTotal != null) return s + lineTotal;
+
+  // fallback: unitPrice * qty
+  final unit = (it['unitPrice'] as num?)?.toDouble() ?? 0.0;
+  return s + (unit * qty);
+});
 
     // 4) Creo ordine con quel ticket
     await _db.collection('orders').add({
@@ -61,6 +73,7 @@ class OrderService {
       'ticketNumber': ticketNumber,
       'partitaNumber': ticketNumber,
       'items': items,
+      'total': total,
       'deposit': deposit,
       'isPaid': isPaid,
       'createdAt': FieldValue.serverTimestamp(),
