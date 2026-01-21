@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+//import '../services/auth_service.dart';
+import '../core/company_context.dart';
 
 import '../services/client_service.dart';
 import '../services/garment_service.dart';
@@ -33,6 +36,9 @@ class _CapiScreenState extends State<CapiScreen> {
   final _typeService = OperationTypeService();
 
   List<Map<String, String>> _operationTypes = [];
+
+  StreamSubscription? _typesSub;
+
   bool _typesLoaded = false;
   bool _isPrinting = false;
   final TextEditingController _depositCtrl = TextEditingController(text: '0,00');
@@ -102,24 +108,72 @@ double _parseEuroToDouble(String s) {
       _wDelBtn +
       24; // 👈 buffer anti-overflow
 
-  @override
-  void initState() {
-    super.initState();
-    _loadTypes();
-  }
+ @override
+void initState() {
+  super.initState();
+  _listenTypes();
+}
 
-  Future<void> _loadTypes() async {
-    final snap = await _typeService.streamTypes().first;
-    _operationTypes = snap.docs
-        .map((d) => {
-              'id': d.id,
-              'name': d['name'] as String,
-            })
-        .toList();
+void _listenTypes() {
+  _typesSub?.cancel();
+  _typesSub = _typeService.streamTypes().listen((snap) {
+    final docs = snap.docs.toList();
+
+    DateTime dt(dynamic v) =>
+        v is Timestamp ? v.toDate() : DateTime.fromMillisecondsSinceEpoch(0);
+
+    docs.sort((a, b) => dt(a.data()['createdAt']).compareTo(dt(b.data()['createdAt'])));
+
+    final types = docs.map((d) {
+      final data = d.data();
+      return {
+        'id': d.id,
+        'name': (data['name'] ?? '').toString(),
+      };
+    }).where((t) => (t['name'] ?? '').toString().trim().isNotEmpty).toList();
 
     if (!mounted) return;
-    setState(() => _typesLoaded = true);
+    setState(() {
+      _operationTypes = types;
+      _typesLoaded = true;
+    });
+  }, onError: (_) {
+    if (!mounted) return;
+    setState(() {
+      _operationTypes = [];
+      _typesLoaded = true;
+    });
+  });
+}
+
+
+  Future<void> _loadTypes() async {
+  final snap = await _typeService.streamTypes().first;
+
+  final docs = snap.docs.toList();
+
+  DateTime _dtFrom(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    return DateTime.fromMillisecondsSinceEpoch(0);
   }
+
+  docs.sort((a, b) {
+    final da = _dtFrom(a.data()['createdAt']);
+    final db = _dtFrom(b.data()['createdAt']);
+    return da.compareTo(db); // ✅ vecchi -> nuovi
+  });
+
+  _operationTypes = docs
+      .map((d) => {
+            'id': d.id,
+            'name': d['name'] as String,
+          })
+      .toList();
+
+  if (!mounted) return;
+  setState(() => _typesLoaded = true);
+}
+
 
   Future<void> _onTypeSelected(_PendingOp op, String typeId) async {
     final prices = await _garmentService.getPricesForGarment(op.garmentId);
@@ -141,6 +195,8 @@ double _parseEuroToDouble(String s) {
     _debounce?.cancel();
     _searchCtrl.dispose();
     _depositCtrl.dispose();
+    _typesSub?.cancel();
+
     
     for (final p in _pending) {
       p.dispose();
@@ -316,7 +372,7 @@ double _remainingTotal() {
     _toast('Aggiunto al carrello');
   }
 
-  double get _total => _cart.fold(0, (sum, x) => sum + (x.price * x.qty));
+double get _total => _cart.fold(0, (sum, x) => sum + x.price);
 
   Future<void> _openCart() async {
     await showDialog(
@@ -483,7 +539,7 @@ Future<void> _printAndClose() async {
 
   // ✅ copie IMMUTABILI (non usare _cart dopo)
   final cartCopy = List<_CartItem>.from(_cart);
-  final  totalCopy = cartCopy.fold(0.0, (s, x) => s + (x.price * x.qty));
+  final totalCopy = cartCopy.fold(0.0, (s, x) => s + x.price);
   final depositCopy = _depositValue();
   final isPaidCopy = _isPaid;
 
@@ -494,6 +550,23 @@ Future<void> _printAndClose() async {
       _toast('Cliente non trovato');
       return;
     }
+
+final companyId = await CompanyContext.instance.getCompanyId();
+final companySnap = await FirebaseFirestore.instance
+    .collection('companies')
+    .doc(companyId)
+    .get();
+
+final company = companySnap.data() ?? {};
+
+// campi REALI su companies (come il tuo screenshot)
+final companyName = (company['companyName'] ?? '').toString();
+final ownerFullName = (company['ownerFullName'] ?? '').toString();
+final addressStreet = (company['addressStreet'] ?? '').toString();
+final addressCap = (company['addressCap'] ?? '').toString();
+final addressCity = (company['addressCity'] ?? '').toString();
+final ownerPhone = (company['ownerPhone'] ?? '').toString();
+
 
     // ✅ ticket PREVIEW (+1 già calcolato dall’header AppShell)
     final previewTicket = AppShell.of(context).currentPreviewTicket;
@@ -520,6 +593,12 @@ Future<void> _printAndClose() async {
       deposit: depositCopy,
       isPaid: isPaidCopy,
       total: totalCopy,
+      companyName: companyName,
+      ownerFullName: ownerFullName,
+      addressStreet: addressStreet,
+      addressCap: addressCap,
+      addressCity: addressCity,
+      ownerPhone: ownerPhone,
     );
 
     // ✅ PREVIEW + conferma
@@ -540,8 +619,8 @@ Future<void> _printAndClose() async {
         'garmentId': c.garmentId,
         'garmentName': c.garmentName,
         'qty': c.qty,
-        'unitPrice': c.price,
-        'lineTotal': c.price * c.qty,
+        'unitPrice': (c.qty > 0) ? (c.price / c.qty) : c.price,
+        'lineTotal': c.price,
         'operationTypeName': c.type,
         'releaseDate': Timestamp.fromDate(c.releaseDate),
         'pickupDate': Timestamp.fromDate(c.pickupDate),
@@ -572,6 +651,12 @@ Future<void> _printAndClose() async {
       deposit: depositCopy,
       isPaid: isPaidCopy,
       total: totalCopy,
+      companyName: companyName,
+      ownerFullName: ownerFullName,
+      addressStreet: addressStreet,
+      addressCap: addressCap,
+      addressCity: addressCity,
+      ownerPhone: ownerPhone,
     );
 
     await PrintService.printAll(finalData);
@@ -914,99 +999,95 @@ Future<void> _printAndClose() async {
                                           ),
                                         ),
                                         const SizedBox(width: _gap),
-                                        SizedBox(
-                                          width: _wTipo,
-                                          child: _fieldBox(
-                                            label: 'Tipo',
-                                            child: !_typesLoaded
-                                                ? const SizedBox(
-                                                    height: 24,
-                                                    child: Center(
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                              strokeWidth: 2),
-                                                    ),
-                                                  )
-                                                : DropdownButtonHideUnderline(
-                                                    child: DropdownButton<String>(
-                                                      key: ValueKey(
-                                                          '${op.garmentId}_${op.typeId}'),
-                                                      value: (op.typeId !=
-                                                                  null &&
-                                                              _operationTypes.any(
-                                                                  (t) =>
-                                                                      t['id'] ==
-                                                                      op.typeId))
-                                                          ? op.typeId
-                                                          : null,
-                                                      hint: const Text(
-                                                          'Seleziona'),
-                                                      isDense: true,
-                                                      items: _operationTypes
-                                                          .map((t) {
-                                                        return DropdownMenuItem<
-                                                            String>(
-                                                          value: t['id'],
-                                                          child:
-                                                              Text(t['name']!),
-                                                        );
-                                                      }).toList(),
-                                                      onChanged: (typeId) {
-                                                        if (typeId == null) return;
+                                       SizedBox(
+  width: _wTipo,
+  child: _fieldBox(
+    label: 'Tipo',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 1) Loading types
+        if (!_typesLoaded)
+          const SizedBox(
+            height: 24,
+            child: Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
 
-                                                        final type =
-                                                            _operationTypes
-                                                                .firstWhere((t) =>
-                                                                    t['id'] ==
-                                                                    typeId);
-                                                        final typeName =
-                                                            type['name']!;
+        // 2) Dropdown (solo se typesLoaded)
+        if (_typesLoaded)
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              key: ValueKey('${op.garmentId}_${op.typeId}'),
+              value: (op.typeId != null &&
+                      _operationTypes.any((t) => t['id'] == op.typeId))
+                  ? op.typeId
+                  : null,
+              hint: const Text('Seleziona'),
+              isDense: true,
+              items: _operationTypes.map((t) {
+                return DropdownMenuItem<String>(
+                  value: t['id'],
+                  child: Text(t['name']!),
+                );
+              }).toList(),
+              onChanged: (typeId) {
+                if (typeId == null) return;
 
-                                                        setState(() {
-                                                          op.typeId = typeId;
-                                                          op.typeName = typeName;
-                                                          op.priceManuallyEdited =
-                                                              false;
-                                                          op.priceCtrl.text =
-                                                              _fmtEuro(0);
-                                                        });
+                final type =
+                    _operationTypes.firstWhere((t) => t['id'] == typeId);
+                final typeName = type['name']!;
 
-                                                        () async {
-                                                          try {
-                                                            final prices =
-                                                                await _garmentService
-                                                                    .getPricesForGarment(
-                                                                        op.garmentId);
-                                                            final price =
-                                                                prices[typeId] ??
-                                                                    0;
+                setState(() {
+                  op.typeId = typeId;
+                  op.typeName = typeName;
+                  op.priceManuallyEdited = false;
+                  op.priceCtrl.text = _fmtEuro(0);
+                });
 
-                                                            if (!mounted) return;
-                                                            setState(() {
-                                                              op.unitPrice =
-                                                                  (price as num)
-                                                                      .toDouble();
-                                                              final qty =
-                                                                  _qtyOf(op);
-                                                              op.manualUnitPrice =
-                                                                  null;
-                                                              op.priceManuallyEdited =
-                                                                  false;
-                                                              op.priceCtrl.text =
-                                                                  _fmtEuro(op.unitPrice *
-                                                                      qty);
-                                                            });
-                                                          } catch (e) {
-                                                            if (!mounted) return;
-                                                            _toast(
-                                                                'Prezzo non leggibile (rules/permessi): $e');
-                                                          }
-                                                        }();
-                                                      },
-                                                    ),
-                                                  ),
-                                          ),
-                                        ),
+                () async {
+                  try {
+                    final prices = await _garmentService
+                        .getPricesForGarment(op.garmentId);
+                    final price = prices[typeId] ?? 0;
+
+                    if (!mounted) return;
+                    setState(() {
+                      op.unitPrice = (price as num).toDouble();
+                      final qty = _qtyOf(op);
+                      op.manualUnitPrice = null;
+                      op.priceManuallyEdited = false;
+                      op.priceCtrl.text = _fmtEuro(op.unitPrice * qty);
+                    });
+                  } catch (e) {
+                    if (!mounted) return;
+                    _toast('Prezzo non leggibile (rules/permessi): $e');
+                  }
+                }();
+              },
+            ),
+          ),
+
+        // 3) Messaggio rosso se typesLoaded ma lista vuota
+        if (_typesLoaded && _operationTypes.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'Nessun tipo trovato (operation_types vuoto o non leggibile)',
+              style: TextStyle(
+                color: Colors.red,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+      ],
+    ),
+  ),
+),
+
                                         const SizedBox(width: _gap),
                                         SizedBox(
                                           width: _wRilascio,

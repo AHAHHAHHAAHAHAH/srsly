@@ -29,14 +29,26 @@ class AuthService {
     required String email,
     required String password,
     required String companyName,
+    required String ownerFullName,
+    required String addressStreet,
+    required String addressCap,
+    required String addressCity,
+    required String ownerPhone,
   }) async {
     final e = email.trim();
     final p = password.trim();
     final c = companyName.trim();
 
-    if (e.isEmpty || p.isEmpty || c.isEmpty) {
-      throw Exception('Dati registrazione mancanti');
-    }
+  final o = ownerFullName.trim();
+  final street = addressStreet.trim();
+  final cap = addressCap.trim();
+  final city = addressCity.trim();
+  final phone = ownerPhone.trim();
+
+if (e.isEmpty || p.isEmpty || c.isEmpty || o.isEmpty || street.isEmpty || cap.isEmpty || city.isEmpty || phone.isEmpty) {
+  throw Exception('Dati registrazione mancanti');
+}
+
 
     final cred = await _auth.createUserWithEmailAndPassword(email: e, password: p);
     final user = cred.user;
@@ -60,12 +72,18 @@ class AuthService {
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
-    // companies/{companyId} con chiave companyName (non "name")
     await _db.collection('companies').doc(companyId).set({
       'companyName': c,
       'companyNameLowerCase': c.toLowerCase(),
       'createdAt': FieldValue.serverTimestamp(),
+      // nuovi campi
+      'ownerFullName': o,
+      'addressStreet': street,
+      'addressCap': cap,
+      'addressCity': city,
+      'ownerPhone': phone,
     }, SetOptions(merge: true));
+
 
     // non blocca se fallisce
     try {

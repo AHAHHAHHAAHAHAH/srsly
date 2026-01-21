@@ -11,6 +11,12 @@ class PrintOrderData {
   final double total;
   final double deposit;
   final bool isPaid;
+  final String companyName;
+  final String ownerFullName;
+ final String addressStreet;
+final String addressCap;
+final String addressCity;
+  final String ownerPhone;
   
   PrintOrderData({
     required this.ticketNumber,
@@ -23,6 +29,13 @@ class PrintOrderData {
     required this.total,
     required this.deposit,
     required this.isPaid,
+    required this.companyName,
+    required this.ownerFullName,
+    required this.addressStreet,
+    required this.addressCap,
+    required this.addressCity,
+    required this.ownerPhone,
+    
   });
 }
 
