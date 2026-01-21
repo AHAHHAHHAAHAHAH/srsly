@@ -1,4 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
 import 'print_models.dart';
 import 'receipt_builder.dart';
 
@@ -7,7 +13,10 @@ class PrintPreviewDialog extends StatefulWidget {
 
   const PrintPreviewDialog({super.key, required this.data});
 
-  static Future<bool?> open(BuildContext context, {required PrintOrderData data}) {
+  static Future<bool?> open(
+    BuildContext context, {
+    required PrintOrderData data,
+  }) {
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -62,7 +71,8 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
                   ),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.06),
                       borderRadius: BorderRadius.circular(18),
@@ -73,22 +83,22 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Totale: € ${_euro(widget.data.total)}',
+                          'Totale: € ${_euro(d.total)}',
                           style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Acconto: € ${_euro(_safeDeposit(widget.data))}',
+                          'Acconto: € ${_euro(_safeDeposit(d))}',
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Rimanenza: € ${_euro(_remaining(widget.data))}',
+                          'Rimanenza: € ${_euro(_remaining(d))}',
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ],
                     ),
-                  )
+                  ),
                 ],
               ),
             ),
@@ -101,7 +111,7 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.black.withOpacity(0.08)),
                   ),
-                  child: _body(d),
+                  child: _pdfBody(d),
                 ),
               ),
             ),
@@ -120,7 +130,8 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
                     icon: const Icon(Icons.print),
                     label: const Text('Conferma stampa'),
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 12),
                       shape: const StadiumBorder(),
                     ),
                   ),
@@ -133,20 +144,141 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
     );
   }
 
+  // =========================
+  // PDF PREVIEW (render vero)
+  // =========================
+  Widget _pdfBody(PrintOrderData d) {
+    return PdfPreview(
+      build: (format) => _buildPdfBytesForTab(d, _tab),
+      allowPrinting: false,
+      allowSharing: false,
+      canChangeOrientation: false,
+      canChangePageFormat: false,
+      pdfFileName: 'scontrino_${d.ticketNumber}.pdf',
+      loadingWidget: const Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  Future<Uint8List> _buildPdfBytesForTab(PrintOrderData d, int tab) async {
+    final doc = pw.Document();
+
+    // font monospace stabile
+    final mono = await PdfGoogleFonts.courierPrimeItalic();
+
+    if (tab == 0 || tab == 1) {
+      final text = (tab == 0) ? ReceiptBuilder.lavanderia(d) : ReceiptBuilder.cliente(d);
+
+      doc.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.fromLTRB(36, 28, 36, 28),
+          build: (_) {
+            return pw.Align(
+              alignment: pw.Alignment.topCenter,
+              child: pw.Container(
+                width: 360, // “scontrino” stretto al centro
+                padding: const pw.EdgeInsets.all(8),
+                child: pw.Text(
+                  text,
+                  style: pw.TextStyle(
+                    font: mono,
+                    fontSize: 11.5,
+                    height: 1.18,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    } else {
+      // BOLLINI: generiamo una pagina con griglia
+      final labels = <String>[];
+      for (final item in d.items) {
+        for (int i = 0; i < item.qty; i++) {
+          labels.add(
+            ReceiptBuilder.bollino(
+              ticket: d.ticketNumber,
+              client: d.clientName,
+              garment: item.garmentName,
+              pickup: d.pickupDate,
+              slot: d.pickupSlot,
+            ),
+          );
+        }
+      }
+
+      if (labels.isEmpty) {
+        doc.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            build: (_) => pw.Center(
+              child: pw.Text(
+                'Nessun bollino',
+                style: pw.TextStyle(font: mono, fontSize: 14),
+              ),
+            ),
+          ),
+        );
+      } else {
+        doc.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(24),
+            build: (_) {
+              // 4 colonne tipo etichette
+              const cols = 4;
+              return pw.Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final s in labels)
+                    pw.Container(
+                      width: (PdfPageFormat.a4.availableWidth - (10 * (cols - 1))) / cols,
+                      height: 95,
+                      padding: const pw.EdgeInsets.all(8),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(width: 1, color: PdfColors.grey700),
+                        borderRadius: pw.BorderRadius.circular(6),
+                        color: PdfColors.white,
+                      ),
+                      child: pw.Text(
+                        s.trim(),
+                        style: pw.TextStyle(
+                          font: mono,
+                          fontSize: 9.6,
+                          height: 1.12,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        );
+      }
+    }
+
+    return doc.save();
+  }
+
+  // =========================
+  // Helpers UI
+  // =========================
   String _euro(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
 
-double _safeDeposit(PrintOrderData d) {
-  final dep = d.deposit;
-  if (dep.isNaN || dep.isInfinite || dep < 0) return 0.0;
-  if (dep > d.total) return d.total; // opzionale: clamp al totale
-  return dep;
-}
+  double _safeDeposit(PrintOrderData d) {
+    final dep = d.deposit;
+    if (dep.isNaN || dep.isInfinite || dep < 0) return 0.0;
+    if (dep > d.total) return d.total; // clamp al totale
+    return dep;
+  }
 
-double _remaining(PrintOrderData d) {
-  final r = d.total - _safeDeposit(d);
-  return r < 0 ? 0.0 : r;
-}
-
+  double _remaining(PrintOrderData d) {
+    final r = d.total - _safeDeposit(d);
+    return r < 0 ? 0.0 : r;
+  }
 
   Widget _header(PrintOrderData d) {
     return Padding(
@@ -171,117 +303,6 @@ double _remaining(PrintOrderData d) {
             overflow: TextOverflow.ellipsis,
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _body(PrintOrderData d) {
-    if (_tab == 0) {
-      final text = ReceiptBuilder.lavanderia(d);
-      return _monospaceSheet(text);
-    }
-    if (_tab == 1) {
-      final text = ReceiptBuilder.cliente(d);
-      return _monospaceSheet(text);
-    }
-
-    // Bollini preview: griglia di etichette
-    final labels = <String>[];
-    for (final item in d.items) {
-      for (int i = 0; i < item.qty; i++) {
-        labels.add(
-          ReceiptBuilder.bollino(
-            ticket: d.ticketNumber,
-            client: d.clientName,
-            garment: item.garmentName,
-            pickup: d.pickupDate,
-            slot: d.pickupSlot,
-          ),
-        );
-      }
-    }
-
-    if (labels.isEmpty) {
-      return const Center(child: Text('Nessun bollino'));
-    }
-
-    return LayoutBuilder(
-      builder: (context, c) {
-        // Colonne adattive (etichette piccole)
-        final w = c.maxWidth;
-        final columns = w > 760 ? 4 : (w > 520 ? 3 : 2);
-
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final s in labels)
-                SizedBox(
-                  width: (w - (12 * (columns - 1)) - 32) / columns,
-                  child: _labelCard(s),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
- Widget _monospaceSheet(String text) {
-  final controller = ScrollController();
-
-  return Padding(
-    padding: const EdgeInsets.all(14),
-    child: Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black.withOpacity(0.08)),
-      ),
-      child: Scrollbar(
-        controller: controller,
-        thumbVisibility: true,
-        interactive: true, // 👈 fondamentale
-        child: SingleChildScrollView(
-          controller: controller, // 👈 stesso controller
-          padding: const EdgeInsets.all(14),
-          child: SelectableText(
-            text,
-            style: const TextStyle(
-              fontFamily: 'Courier',
-              fontSize: 14,
-              height: 1.25,
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-
-  Widget _labelCard(String s) {
-    return Container(
-      height: 110,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withOpacity(0.10)),
-      ),
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: Text(
-          s.trim(),
-          style: const TextStyle(
-            fontFamily: 'Courier',
-            fontSize: 12,
-            height: 1.15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
       ),
     );
   }

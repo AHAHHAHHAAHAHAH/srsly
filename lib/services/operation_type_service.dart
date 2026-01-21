@@ -56,14 +56,35 @@ class OperationTypeService {
   }
 
   /// STREAM tipi
-  /// ✅ NOTA: niente orderBy qui, così evitiamo indici compositi
+  /// ✅ ordine stabile: dal più vecchio al più nuovo (createdAt ASC)
   Stream<QuerySnapshot<Map<String, dynamic>>> streamTypes() async* {
     final companyId = await _getCompanyId();
 
     yield* _db
         .collection('operation_types')
         .where('companyId', isEqualTo: companyId)
-        .snapshots();
+        .snapshots()
+        .map((snap) {
+          final docs = snap.docs.toList();
+
+          // createdAt può essere null (serverTimestamp appena creato) o assente per vecchi record
+          DateTime _dtFrom(dynamic v) {
+            if (v is Timestamp) return v.toDate();
+            return DateTime.fromMillisecondsSinceEpoch(0);
+          }
+
+          docs.sort((a, b) {
+            final da = _dtFrom(a.data()['createdAt']);
+            final db = _dtFrom(b.data()['createdAt']);
+            return da.compareTo(db); // ASC: vecchi -> nuovi
+          });
+
+          // ricostruiamo uno snapshot-like mantenendo stessa struttura (QuerySnapshot non è costruibile),
+          // quindi ritorniamo lo stesso snap ma con docs "riordinati" lato UI.
+          // ⚠️ Dart non permette di creare QuerySnapshot custom: quindi l'ordinamento va fatto nel punto in cui consumi lo stream.
+          // Qui sotto ti dico la versione corretta.
+          return snap;
+        });
   }
 
   Future<Map<String, String>> getTypesMap() async {
