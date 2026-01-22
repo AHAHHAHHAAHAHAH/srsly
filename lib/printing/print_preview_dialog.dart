@@ -163,7 +163,7 @@ class _PrintPreviewDialogState extends State<PrintPreviewDialog> {
     final doc = pw.Document();
 
     // font monospace stabile
-    final mono = await PdfGoogleFonts.courierPrimeItalic();
+final mono = await PdfGoogleFonts.jetBrainsMonoRegular();
 
     if (tab == 0 || tab == 1) {
       final text = (tab == 0) ? ReceiptBuilder.lavanderia(d) : ReceiptBuilder.cliente(d);

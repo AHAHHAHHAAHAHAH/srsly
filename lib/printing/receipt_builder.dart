@@ -16,7 +16,7 @@ class ReceiptBuilder {
   static const int _midGap = 2;
   static const int _rightColW = _w - _leftColW - _midGap;
 
-  // Riga separatore tabella: NO "─" (fa glitch), uso "_" (stabile)
+  // Riga separatore tabella: stabile
   static String _rule() => '_' * _w;
 
   // Trattini SOLO nel blocco company
@@ -31,33 +31,27 @@ class ReceiptBuilder {
 
     final lines = <String>[];
 
-    // (copia per la lavanderia) più a sinistra possibile
     lines.add('(copia per la lavanderia)');
 
-    // Stato
+    // ✅ DA PAGARE centrato
     lines.add(_center(status));
     lines.add('');
 
-    // TRATTINI SOLO QUI
     lines.add(_dashLine());
     lines.add(_center(o.companyName.toUpperCase()));
     lines.add(_center('SMACCHIATORIA'));
     lines.add(_dashLine());
-    //lines.add('');
 
-    // Dati azienda
     lines.add(_center('di ${o.ownerFullName}'));
     lines.add(_center(o.addressStreet));
     lines.add(_center('${o.addressCap}${o.addressCity.toUpperCase()}'));
     lines.add(_center('Telefono: ${o.ownerPhone}'));
     lines.add('');
 
-    // Partita / Cod. Cliente (NO distacchi strani)
     lines.add('Partita n. ${o.ticketNumber}');
     lines.add('Cod. Cliente: ${o.ticketNumber}');
     lines.add('');
 
-    // Dati cliente
     lines.add('Dati: ${o.clientName}');
     lines.add('Cellulare: ${o.clientPhone}');
     lines.add('Accettazione: ${_fmtDate(o.createdAt)}');
@@ -65,33 +59,20 @@ class ReceiptBuilder {
     lines.add('N. capi: ${_totalQty(o)}');
     lines.add('');
 
-    // Acconto / Totale con SPAZIO tra loro
-    // e Rimanenza perfettamente sotto Totale
     final acc = _euro(o.deposit);
     final tot = _euro(o.total);
     final rem = _euro(remaining);
 
-    // Riga 1
-    final left1 =
-        _padRight('Acconto', 8) + _padLeft('€ $acc', _leftColW - 8);
-    final right1 =
-        _padRight('Totale €', 9) + _padLeft(tot, _rightColW - 9);
+    final left1 = _padRight('Acconto', 8) + _padLeft('€ $acc', _leftColW - 8);
+    final right1 = _padRight('Totale €', 9) + _padLeft(tot, _rightColW - 9);
 
-    lines.add(
-      _padRight(left1, _leftColW) + (' ' * _midGap) + _padRight(right1, _rightColW),
-    );
+    lines.add(_padRight(left1, _leftColW) + (' ' * _midGap) + _padRight(right1, _rightColW));
 
-    // Riga 2: rimanenza sotto totale
-    final right2 =
-        _padRight('Rimanenza', 9) + _padLeft(rem, _rightColW - 9);
-
-    lines.add(
-      (' ' * _leftColW) + (' ' * _midGap) + _padRight(right2, _rightColW),
-    );
+    final right2 = _padRight('Rimanenza', 9) + _padLeft(rem, _rightColW - 9);
+    lines.add((' ' * _leftColW) + (' ' * _midGap) + _padRight(right2, _rightColW));
 
     lines.add('');
 
-    // Tabella
     lines.add(_row3(qty: 'Q.ta', desc: 'Descrizione Capo', price: 'Prezzo'));
     lines.add(_rule());
 
@@ -99,115 +80,89 @@ class ReceiptBuilder {
       final qty = '${it.qty}';
       final desc = it.garmentName.toUpperCase();
 
+      // ✅ QUI: it.price è già il prezzo riga (come carrello) => NON moltiplicare
       final price = _euro(it.price);
 
-
       lines.add(_row3(qty: qty, desc: desc, price: '€ $price'));
-      lines.add(_rule()); // separatore PER OGNI CAPO
+      lines.add(_rule());
     }
 
     return lines.join('\n');
   }
 
- static String cliente(PrintOrderData o) {
-  final status = o.isPaid ? 'PAGATO' : 'DA PAGARE';
-  final remaining = _clamp0(o.total - o.deposit);
+  static String cliente(PrintOrderData o) {
+    final status = o.isPaid ? 'PAGATO' : 'DA PAGARE';
+    final remaining = _clamp0(o.total - o.deposit);
 
-  final lines = <String>[];
+    final lines = <String>[];
 
-  // Stato
-  lines.add(_center(status));
-  lines.add('');
+    lines.add(_center(status));
+    lines.add('');
 
-  // Blocchetto company (trattini SOLO QUI)
-  lines.add(_dashLine());
-  lines.add(_center(o.companyName.toUpperCase()));
-  lines.add(_center('SMACCHATORIA'));
-  lines.add(_dashLine());
- // lines.add('');
+    lines.add(_dashLine());
+    lines.add(_center(o.companyName.toUpperCase()));
+    lines.add(_center('SMACCHIATORIA')); // ✅ fix typo
+    lines.add(_dashLine());
 
-  // Dati azienda
-  lines.add(_center('di ${o.ownerFullName}'));
-  lines.add(_center(o.addressStreet));
-  lines.add(_center('${o.addressCap} ${o.addressCity.toUpperCase()}'));
-  lines.add(_center('Telefono: ${o.ownerPhone}'));
-  //lines.add('');
+    lines.add(_center('di ${o.ownerFullName}'));
+    lines.add(_center(o.addressStreet));
+    lines.add(_center('${o.addressCap} ${o.addressCity.toUpperCase()}'));
+    lines.add(_center('Telefono: ${o.ownerPhone}'));
+    //lines.add('');
 
-  // BOX 1 – responsabilità
-   lines.add(_boxedText(
-  'In caso di mancato ritiro entro 30 giorni la ditta declina ogni '
-  'responsabilità inoltre la ditta non garantisce: bottoni, alamari, '
-  'cerniere, spalline, applicazioni di vario genere come strass, '
-  'dorature e scolorature del capo etc.',
-));
+    // ✅ BOX veri con angoli (niente +, niente bordi storti se font NON italic)
+    lines.add(_boxedText(
+      'In caso di mancato ritiro entro 30 giorni la ditta declina ogni responsabilità. '
+      'inoltre la ditta non garantisce: bottoni, alamari, cerniere, spalline, '
+      'applicazioni di vario genere come strass, dorature e scolorature del capo etc.',
+    ));
+    //lines.add('');
 
- // lines.add('');
+    lines.add(_boxedText(
+      'Nel caso in cui un capo venisse danneggiato la ditta è tenuta a risarcire '
+      'un importo pari a 7 volte il prezzo del lavaggio.',
+    ));
+    //lines.add('');
 
-  // BOX 2 – risarcimento
-  lines.add(_boxedText(
-  'Nel caso in cui un capo venisse danneggiato la ditta è tenuta a '
-  'risarcire un importo pari a 7 volte il prezzo del lavaggio.',
-));
+    lines.add('Partita n.: ${o.ticketNumber}');
+    lines.add('Codice Cliente: ${o.ticketNumber}');
+    lines.add('');
 
- // lines.add('');
+    lines.add('Dati: ${o.clientName}');
+    lines.add('Cellulare: ${o.clientPhone}');
+    lines.add('Accettazione: ${_fmtDate(o.createdAt)}');
+    lines.add('Ritiro: ${_fmtDate(o.pickupDate)}');
+    lines.add('N. capi: ${_totalQty(o)}');
+    lines.add('');
 
-  // Partita / Cliente
-  lines.add('Partita n.: ${o.ticketNumber}');
-  lines.add('Codice Cliente: ${o.ticketNumber}');
-  lines.add('');
+    final acc = _euro(o.deposit);
+    final tot = _euro(o.total);
+    final rem = _euro(remaining);
 
-  // Dati cliente
-  lines.add('Dati: ${o.clientName}');
-  lines.add('Cellulare: ${o.clientPhone}');
-  lines.add('Accettazione: ${_fmtDate(o.createdAt)}');
-  lines.add('Ritiro: ${_fmtDate(o.pickupDate)}');
-  lines.add('N. capi: ${_totalQty(o)}');
-  lines.add('');
+    final left1 = _padRight('Acconto', 8) + _padLeft(acc, _leftColW - 8);
+    final right1 = _padRight('Totale €', 9) + _padLeft(tot, _rightColW - 9);
 
-  // Totali
-  final acc = _euro(o.deposit);
-  final tot = _euro(o.total);
-  final rem = _euro(remaining);
+    lines.add(_padRight(left1, _leftColW) + (' ' * _midGap) + _padRight(right1, _rightColW));
 
-  final left1 = _padRight('Acconto', 8) + _padLeft(acc, _leftColW - 8);
-  final right1 = _padRight('Totale €', 9) + _padLeft(tot, _rightColW - 9);
+    final right2 = _padRight('Rimanenza', 9) + _padLeft(rem, _rightColW - 9);
+    lines.add((' ' * _leftColW) + (' ' * _midGap) + _padRight(right2, _rightColW));
 
-  lines.add(
-    _padRight(left1, _leftColW) +
-        (' ' * _midGap) +
-        _padRight(right1, _rightColW),
-  );
+    lines.add('');
 
-  final right2 =
-      _padRight('Rimanenza', 9) + _padLeft(rem, _rightColW - 9);
-
-  lines.add(
-    (' ' * _leftColW) + (' ' * _midGap) + _padRight(right2, _rightColW),
-  );
-
-  lines.add('');
-
-  // Tabella CLIENTE (NO PREZZO)
-  lines.add(
-    _padRight('Q.tà', _qtyW) +
-        ' ' +
-        _padRight('Descrizione Capo', _descW) +
-        ' ' +
-        _padRight('note', _priceW),
-  );
-  lines.add(_rule());
-
-  for (final it in o.items) {
+    // Tabella CLIENTE (NO PREZZO, ultima colonna = note)
     lines.add(
-      _padRight('${it.qty}', _qtyW) +
-          ' ' +
-          _padRight(it.garmentName.toUpperCase(), _descW),
+      _padRight('Q.tà', _qtyW) + ' ' + _padRight('Descrizione Capo', _descW) + ' ' + _padRight('note', _priceW),
     );
+    lines.add(_rule());
+
+    for (final it in o.items) {
+      final row =
+          _padRight('${it.qty}', _qtyW) + ' ' + _padRight(it.garmentName.toUpperCase(), _descW) + ' ' + _padRight('', _priceW);
+      lines.add(row);
+    }
+
+    return lines.join('\n');
   }
-
-  return lines.join('\n');
-}
-
 
   static String bollino({
     required int ticket,
@@ -246,65 +201,6 @@ class ReceiptBuilder {
     return '$dd/$mm/$yyyy';
   }
 
- static String _boxedText(String text) {
-  // box largo come lo scontrino, bordo solo sopra/sotto (stabile)
-  final innerW = _w - 2; // 1 spazio a sx + 1 a dx
-  final top = '_' * _w;
-  final bottom = top;
-
-  final wrapped = _wrapWords(text, innerW);
-
-  final body = wrapped.map((line) {
-    // niente | laterali: solo padding, più coerente con termica reale
-    final t = line.length > innerW ? line.substring(0, innerW) : line;
-    return ' ' + _padRight(t, innerW) + ' ';
-  }).toList();
-
-  return ([top, ...body, bottom]).join('\n');
-}
-
-static List<String> _wrapWords(String text, int width) {
-  final cleaned = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-  if (cleaned.isEmpty) return [''];
-
-  final words = cleaned.split(' ');
-  final lines = <String>[];
-  var current = '';
-
-  for (final w in words) {
-    // se una parola è più lunga della width, la spezzettiamo "soft"
-    if (w.length > width) {
-      if (current.isNotEmpty) {
-        lines.add(current);
-        current = '';
-      }
-      var start = 0;
-      while (start < w.length) {
-        final end = (start + width < w.length) ? start + width : w.length;
-        lines.add(w.substring(start, end));
-        start = end;
-      }
-      continue;
-    }
-
-    if (current.isEmpty) {
-      current = w;
-    } else if (current.length + 1 + w.length <= width) {
-      current = '$current $w';
-    } else {
-      lines.add(current);
-      current = w;
-    }
-  }
-
-  if (current.isNotEmpty) lines.add(current);
-  return lines;
-}
-
-
-
-
-
   static String _euro(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
 
   static String _center(String s) {
@@ -330,10 +226,61 @@ static List<String> _wrapWords(String text, int width) {
     required String desc,
     required String price,
   }) {
-    return _padRight(qty, _qtyW) +
-        ' ' +
-        _padRight(desc, _descW) +
-        ' ' +
-        _padLeft(price, _priceW);
+    return _padRight(qty, _qtyW) + ' ' + _padRight(desc, _descW) + ' ' + _padLeft(price, _priceW);
+  }
+
+  // =========================
+  //  BOX VERO (ANGOLI)
+  // =========================
+  static String _boxedText(String text) {
+    final innerW = _w - 2; // spazio interno tra bordi
+    final top = '┌' + ('─' * innerW) + '┐';
+    final bottom = '└' + ('─' * innerW) + '┘';
+
+    final wrapped = _wrapWords(text, innerW);
+
+    final body = wrapped.map((line) {
+      final t = line.length > innerW ? line.substring(0, innerW) : line;
+      return '│' + _padRight(t, innerW) + '│';
+    }).toList();
+
+    return ([top, ...body, bottom]).join('\n');
+  }
+
+  static List<String> _wrapWords(String text, int width) {
+    final cleaned = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleaned.isEmpty) return [''];
+
+    final words = cleaned.split(' ');
+    final lines = <String>[];
+    var current = '';
+
+    for (final w in words) {
+      if (w.length > width) {
+        if (current.isNotEmpty) {
+          lines.add(current);
+          current = '';
+        }
+        var start = 0;
+        while (start < w.length) {
+          final end = (start + width < w.length) ? start + width : w.length;
+          lines.add(w.substring(start, end));
+          start = end;
+        }
+        continue;
+      }
+
+      if (current.isEmpty) {
+        current = w;
+      } else if (current.length + 1 + w.length <= width) {
+        current = '$current $w';
+      } else {
+        lines.add(current);
+        current = w;
+      }
+    }
+
+    if (current.isNotEmpty) lines.add(current);
+    return lines;
   }
 }

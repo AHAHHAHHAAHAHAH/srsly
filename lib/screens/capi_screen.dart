@@ -659,7 +659,7 @@ final ownerPhone = (company['ownerPhone'] ?? '').toString();
       ownerPhone: ownerPhone,
     );
 
-    await PrintService.printAll(finalData);
+await PrintService.printAllSmart(finalData);
 
     await _clientService.markClientServed(
       clientId: widget.clientId!,
