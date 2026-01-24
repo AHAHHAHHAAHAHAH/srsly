@@ -588,6 +588,7 @@ final ownerPhone = (company['ownerPhone'] ?? '').toString();
                 garmentName: c.garmentName,
                 qty: c.qty,
                 price: c.price,
+                operationName: c.type,
               ))
           .toList(),
       deposit: depositCopy,

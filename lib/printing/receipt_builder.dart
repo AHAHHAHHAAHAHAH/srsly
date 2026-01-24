@@ -2,13 +2,13 @@ import 'print_models.dart';
 
 class ReceiptBuilder {
   // =========================
-  //  CONFIG “FOTOCOPIA”
+  //  CONFIGURAZIONE TABELLE
   // =========================
-  static const int _w = 32;
+  static const int _w = 32; // Larghezza totale scontrino (caratteri)
 
-  // Tabella (Q.ta / Descrizione Capo / Prezzo)
+  // Colonne
   static const int _qtyW = 3;
-  static const int _descW = 20;
+  static const int _descW = 20; // Spazio per la descrizione
   static const int _priceW = _w - (_qtyW + 1 + _descW + 1);
 
   // Blocchetto Acconto/Totale
@@ -16,15 +16,13 @@ class ReceiptBuilder {
   static const int _midGap = 2;
   static const int _rightColW = _w - _leftColW - _midGap;
 
-  // Riga separatore tabella: stabile
   static String _rule() => '_' * _w;
-
-  // Trattini SOLO nel blocco company
   static String _dashLine() => '-' * _w;
 
   // =========================
-  //  PUBLIC
+  //  METODI PUBBLICI
   // =========================
+  
   static String lavanderia(PrintOrderData o) {
     final status = o.isPaid ? 'PAGATO' : 'DA PAGARE';
     final remaining = _clamp0(o.total - o.deposit);
@@ -32,8 +30,6 @@ class ReceiptBuilder {
     final lines = <String>[];
 
     lines.add('(copia per la lavanderia)');
-
-    // ✅ DA PAGARE centrato
     lines.add(_center(status));
     lines.add('');
 
@@ -44,7 +40,7 @@ class ReceiptBuilder {
 
     lines.add(_center('di ${o.ownerFullName}'));
     lines.add(_center(o.addressStreet));
-    lines.add(_center('${o.addressCap}${o.addressCity.toUpperCase()}'));
+    lines.add(_center('${o.addressCap} ${o.addressCity.toUpperCase()}'));
     lines.add(_center('Telefono: ${o.ownerPhone}'));
     lines.add('');
 
@@ -73,17 +69,18 @@ class ReceiptBuilder {
 
     lines.add('');
 
-    lines.add(_row3(qty: 'Q.ta', desc: 'Descrizione Capo', price: 'Prezzo'));
+    // Intestazione Tabella
+    lines.add(_padRight('Q.ta', _qtyW) + ' ' + _padRight('Descrizione Capo', _descW) + ' ' + _padLeft('Prezzo', _priceW));
     lines.add(_rule());
 
     for (final it in o.items) {
-      final qty = '${it.qty}';
-      final desc = it.garmentName.toUpperCase();
-
-      // ✅ QUI: it.price è già il prezzo riga (come carrello) => NON moltiplicare
-      final price = _euro(it.price);
-
-      lines.add(_row3(qty: qty, desc: desc, price: '€ $price'));
+      final op = it.operationName.trim();
+      // Costruiamo la stringa completa "Camicia, stiro"
+      final descName = op.isNotEmpty ? '${it.garmentName}, $op' : it.garmentName;
+      final price = '€ ${_euro(it.price)}';
+      
+      // Usiamo la funzione "Smart" che va a capo se serve
+      _addSmartRow(lines, '${it.qty}', descName, price);
       lines.add(_rule());
     }
 
@@ -101,28 +98,24 @@ class ReceiptBuilder {
 
     lines.add(_dashLine());
     lines.add(_center(o.companyName.toUpperCase()));
-    lines.add(_center('SMACCHIATORIA')); // ✅ fix typo
+    lines.add(_center('SMACCHIATORIA'));
     lines.add(_dashLine());
 
     lines.add(_center('di ${o.ownerFullName}'));
     lines.add(_center(o.addressStreet));
     lines.add(_center('${o.addressCap} ${o.addressCity.toUpperCase()}'));
     lines.add(_center('Telefono: ${o.ownerPhone}'));
-    //lines.add('');
 
-    // ✅ BOX veri con angoli (niente +, niente bordi storti se font NON italic)
     lines.add(_boxedText(
       'In caso di mancato ritiro entro 30 giorni la ditta declina ogni responsabilità. '
       'inoltre la ditta non garantisce: bottoni, alamari, cerniere, spalline, '
       'applicazioni di vario genere come strass, dorature e scolorature del capo etc.',
     ));
-    //lines.add('');
 
     lines.add(_boxedText(
       'Nel caso in cui un capo venisse danneggiato la ditta è tenuta a risarcire '
       'un importo pari a 7 volte il prezzo del lavaggio.',
     ));
-    //lines.add('');
 
     lines.add('Partita n.: ${o.ticketNumber}');
     lines.add('Codice Cliente: ${o.ticketNumber}');
@@ -149,41 +142,49 @@ class ReceiptBuilder {
 
     lines.add('');
 
-    // Tabella CLIENTE (NO PREZZO, ultima colonna = note)
-    lines.add(
-      _padRight('Q.tà', _qtyW) + ' ' + _padRight('Descrizione Capo', _descW) + ' ' + _padRight('note', _priceW),
-    );
+    // Tabella Cliente (Senza Prezzo)
+    lines.add(_padRight('Q.ta', _qtyW) + ' ' + _padRight('Descrizione Capo', _descW) + ' ' + _padRight('Note', _priceW));
     lines.add(_rule());
 
     for (final it in o.items) {
-      final row =
-          _padRight('${it.qty}', _qtyW) + ' ' + _padRight(it.garmentName.toUpperCase(), _descW) + ' ' + _padRight('', _priceW);
-      lines.add(row);
+      final op = it.operationName.trim();
+      final descName = op.isNotEmpty ? '${it.garmentName}, $op' : it.garmentName;
+
+      // Usiamo la funzione "Smart" (passiamo stringa vuota come prezzo così lascia spazio note)
+      _addSmartRow(lines, '${it.qty}', descName, '');
     }
 
     return lines.join('\n');
   }
 
-  static String bollino({
-    required int ticket,
-    required String client,
-    required String garment,
-    required DateTime pickup,
-    required String slot,
-  }) {
-    final lines = <String>[];
-    lines.add(_center('TICKET #$ticket'));
-    lines.add(_center(client));
-    lines.add('');
-    lines.add(_center(garment.toUpperCase()));
-    lines.add('');
-    lines.add(_center('${_fmtDate(pickup)}  $slot'));
-    return lines.join('\n');
+  // =========================
+  //  HELPERS INTELLIGENTI
+  // =========================
+  
+  // Questa funzione SPEZZA la descrizione su più righe se supera la larghezza massima
+  static void _addSmartRow(List<String> lines, String qty, String desc, String rightCol) {
+    // Dividiamo la descrizione in parole
+    final wrappedDesc = _wrapWords(desc, _descW);
+
+    // Riga 1: Contiene Quantità, Prima riga descrizione, Prezzo/Note
+    if (wrappedDesc.isNotEmpty) {
+      lines.add(
+        _padRight(qty, _qtyW) + ' ' + 
+        _padRight(wrappedDesc[0], _descW) + ' ' + 
+        _padLeft(rightCol, _priceW)
+      );
+    }
+
+    // Righe successive: Solo il resto della descrizione (indented)
+    for (int i = 1; i < wrappedDesc.length; i++) {
+      lines.add(
+        (' ' * _qtyW) + ' ' + // Spazio vuoto sotto Qta
+        _padRight(wrappedDesc[i], _descW) + ' ' +
+        (' ' * _priceW)       // Spazio vuoto sotto Prezzo
+      );
+    }
   }
 
-  // =========================
-  //  HELPERS
-  // =========================
   static double _clamp0(double v) => v < 0 ? 0 : v;
 
   static int _totalQty(PrintOrderData o) {
@@ -221,19 +222,8 @@ class ReceiptBuilder {
     return (' ' * (w - s.length)) + s;
   }
 
-  static String _row3({
-    required String qty,
-    required String desc,
-    required String price,
-  }) {
-    return _padRight(qty, _qtyW) + ' ' + _padRight(desc, _descW) + ' ' + _padLeft(price, _priceW);
-  }
-
-  // =========================
-  //  BOX VERO (ANGOLI)
-  // =========================
   static String _boxedText(String text) {
-    final innerW = _w - 2; // spazio interno tra bordi
+    final innerW = _w - 2;
     final top = '┌' + ('─' * innerW) + '┐';
     final bottom = '└' + ('─' * innerW) + '┘';
 

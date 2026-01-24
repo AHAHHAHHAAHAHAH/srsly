@@ -43,10 +43,12 @@ class PrintOrderItem {
   final String garmentName;
   final int qty;
   final double price;
+  final String operationName;
 
   PrintOrderItem({
     required this.garmentName,
     required this.qty,
     required this.price,
+    required this.operationName,
   });
 }

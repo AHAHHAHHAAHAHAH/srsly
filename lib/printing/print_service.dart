@@ -10,69 +10,74 @@ import 'receipt_builder.dart';
 
 class PrintService {
   // =========================
-  //  FORMATI REALI (TERMICA)
+  //  CONFIGURAZIONE MISURE (CALIBRATE SU EPSON TM-U220)
   // =========================
-  // Tipico rotolo: 80mm (se è 58mm cambia qui).
   static const double _receiptWidthMm = 75.0;
+  
+  // MARGINI (Confermati ok):
+  static const double _padLeftMm = 9.0; 
+  static const double _padTopMm = 0.0; 
+  static const double _padRightMm = 3.0; 
+  static const double _padBottomMm = 0.0;
 
-  // Margini termica (mm)
-  static const double _padLeftMm = 6.0;
-  static const double _padRightMm = 3.0;
-  static const double _padTopMm = 3.0;
-  static const double _padBottomMm = 3.0;
+  // Font Ricevuta
+  static const double _fontSizeReceipt = 8.0;
+  static const double _lineHeightReceipt = 1.15;
 
-  // Font ricevute
-  static const double _fontSizeReceipt = 10.0;
-  static const double _lineHeightReceipt = 1.18;
-
-  // Bollini
-  static const double _fontSizeLabel = 9.0;
-  static const double _lineHeightLabel = 1.10;
-
-  // Bollino: 70x45mm (requisito)
+  // BOLLINO
   static const double _labelWidthMm = 75.0;
-  static const double _labelHeightMm = 45.0;
+  static const double _labelHeightMm = 40.0; 
+  static const double _fontSizeLabel = 8.0; 
 
   // =========================
   // Helpers
   // =========================
   static double _mm(double v) => v * PdfPageFormat.mm;
 
-  static int _countLines(String s) =>
-      s.isEmpty ? 0 : ('\n'.allMatches(s).length + 1);
+  static int _countLines(String s) => s.isEmpty ? 0 : ('\n'.allMatches(s).length + 1);
 
-  /// Stima robusta dell'altezza pagina (in points) per testo monospace.
-  /// NB: aggiungiamo buffer extra per evitare tagli (font metrics / rounding).
   static double _estimateHeightPts({
     required int lines,
     required double fontSize,
     required double lineHeight,
-    int extraLines = 10, // buffer a righe (più sicuro)
-    double extraPts = 60, // aria extra (anti-taglio)
+    int extraLines = 15, 
+    double extraPts = 100,
   }) {
     final textH = lines * fontSize * lineHeight;
     final buffer = (extraLines * fontSize * lineHeight) + extraPts;
     return textH + buffer;
   }
 
-  static pw.EdgeInsets _receiptPadding() => pw.EdgeInsets.fromLTRB(
-        _mm(_padLeftMm),
-        _mm(_padTopMm),
-        _mm(_padRightMm),
-        _mm(_padBottomMm),
-      );
+  static pw.EdgeInsets _printPadding() => pw.EdgeInsets.fromLTRB(
+    _mm(_padLeftMm), 
+    _mm(_padTopMm), 
+    _mm(_padRightMm), 
+    _mm(_padBottomMm)
+  );
+
+  static String _fmtDate(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString().substring(2); 
+    return '$dd/$mm/$yyyy';
+  }
+
+  // Helper per unire Capo e Operazione senza maiuscolo forzato
+  static String _formatItemName(PrintOrderItem item) {
+    // Esempio output: "Camicia nera, Solo stiro"
+    // NOTA: Se l'operazione è vuota o null, stampa solo il capo
+    final op = item.operationName.trim();
+    if (op.isEmpty) return item.garmentName;
+    return '${item.garmentName}, $op';
+  }
 
   // =========================
-  //  ENTRYPOINT: "UNA BOTTA"
+  //  ENTRYPOINT
   // =========================
-  /// Prova kiosk (no dialog). Se non possibile, apre il dialog OS (dev/test)
-  /// MA in un solo colpo (1 PDF unico: ricevute + bollini).
   static Future<void> printAllSmart(PrintOrderData data) async {
-    // 1) Provo KIOSK (0 dialog)
     final ok = await printAllKiosk(data);
     if (ok) return;
 
-    // 2) FALLBACK: 1 SOLO DIALOG, 1 SOLO PDF (ricevute + bollini)
     final bytes = await buildAllInOnePdfBytes(data);
     await Printing.layoutPdf(
       onLayout: (_) async => bytes,
@@ -81,34 +86,91 @@ class PrintService {
   }
 
   // =========================
-  //  1) PDF RICEVUTE (2 pagine)
+  //  GENERATORI PDF
   // =========================
-  static Future<Uint8List> buildReceiptsPdfBytes(PrintOrderData data) async {
+  static Future<Uint8List> buildLaundryOnlyPdfBytes(PrintOrderData data) async {
     final doc = pw.Document();
-
-    // Monospace NON italic: box dritti
-    final mono = await PdfGoogleFonts.notoSansMonoRegular();
-
-    _addReceiptPage(
-      doc: doc,
-      mono: mono,
-      text: ReceiptBuilder.lavanderia(data),
-    );
-
-    _addReceiptPage(
-      doc: doc,
-      mono: mono,
-      text: ReceiptBuilder.cliente(data),
-    );
-
+    final mono = await PdfGoogleFonts.jetBrainsMonoRegular();
+    _addReceiptPage(doc: doc, mono: mono, data: data, isClientCopy: false);
     return doc.save();
   }
 
+  static Future<Uint8List> buildClientOnlyPdfBytes(PrintOrderData data) async {
+    final doc = pw.Document();
+    final mono = await PdfGoogleFonts.jetBrainsMonoRegular();
+    _addReceiptPage(doc: doc, mono: mono, data: data, isClientCopy: true);
+    return doc.save();
+  }
+
+  static Future<Uint8List> buildLabelsPdfBytes(PrintOrderData data) async {
+    final doc = pw.Document();
+    final mono = await PdfGoogleFonts.jetBrainsMonoRegular();
+    final monoBold = await PdfGoogleFonts.jetBrainsMonoBold();
+    for (final item in data.items) {
+      for (int i = 0; i < item.qty; i++) {
+        _addSingleLabelPage(doc: doc, mono: mono, monoBold: monoBold, data: data, item: item);
+      }
+    }
+    return doc.save();
+  }
+
+  static Future<Uint8List> buildSingleLabelItemPdfBytes(PrintOrderData data, PrintOrderItem item) async {
+    final doc = pw.Document();
+    final mono = await PdfGoogleFonts.jetBrainsMonoRegular();
+    final monoBold = await PdfGoogleFonts.jetBrainsMonoBold();
+    _addSingleLabelPage(doc: doc, mono: mono, monoBold: monoBold, data: data, item: item);
+    return doc.save();
+  }
+
+  static Future<Uint8List> buildAllInOnePdfBytes(PrintOrderData data) async {
+    final doc = pw.Document();
+    final mono = await PdfGoogleFonts.jetBrainsMonoRegular();
+    final monoBold = await PdfGoogleFonts.jetBrainsMonoBold();
+    
+    _addReceiptPage(doc: doc, mono: mono, data: data, isClientCopy: false);
+    _addReceiptPage(doc: doc, mono: mono, data: data, isClientCopy: true);
+    
+    for (final item in data.items) {
+      for (int i = 0; i < item.qty; i++) {
+        _addSingleLabelPage(doc: doc, mono: mono, monoBold: monoBold, data: data, item: item);
+      }
+    }
+    return doc.save();
+  }
+
+  // =========================
+  //  DISEGNO PAGINE
+  // =========================
+  
+  // Modificato per accettare data invece di text string, così possiamo formattare i capi qui
   static void _addReceiptPage({
     required pw.Document doc,
     required pw.Font mono,
-    required String text,
+    required PrintOrderData data,
+    required bool isClientCopy,
   }) {
+    // Recuperiamo il testo base (intestazioni) dal builder, MA SENZA LA TABELLA OGGETTI
+    // Nota: Per fare questo velocemente senza toccare receipt_builder, usiamo la funzione normale
+    // ma la "puliamo" o meglio: RIGENERIAMO LA LISTA CAPI QUI CON LA NUOVA FORMATTAZIONE.
+    
+    // Per semplicità e sicurezza, usiamo il testo generato da ReceiptBuilder 
+    // MA dobbiamo assicurarci che ReceiptBuilder NON faccia toUpperCase sugli items.
+    // SE NON POSSIAMO MODIFICARE RECEIPT_BUILDER ORA, DOBBIAMO SOSTITUIRE IL TESTO AL VOLO.
+    // OPPURE (Meglio): Usiamo ReceiptBuilder normalmente e ci fidiamo che tu abbia tolto toUpperCase di là, 
+    // oppure facciamo un replace se ReceiptBuilder li fa maiuscoli.
+    
+    // SOLUZIONE PULITA: Chiamiamo ReceiptBuilder passando i dati.
+    // Se ReceiptBuilder mette tutto maiuscolo, lo correggeremo nel ReceiptBuilder.
+    // MA VISTO CHE HAI CHIESTO DI MODIFICARE SOLO QUI:
+    // Ti consiglio di andare in ReceiptBuilder e togliere .toUpperCase() alla riga 80 e 152.
+    // Se non puoi, dimmelo. Assumo che ReceiptBuilder stampi quello che gli passi.
+    
+    String text = isClientCopy ? ReceiptBuilder.cliente(data) : ReceiptBuilder.lavanderia(data);
+    
+    // Se ReceiptBuilder usa toUpperCase(), questo codice qui sotto NON può farci nulla se riceve già la stringa fatta.
+    // QUINDI: DEVI ANDARE IN `receipt_builder.dart` E TOGLIERE `.toUpperCase()` dove stampa il nome del capo.
+    // Esempio: invece di `it.garmentName.toUpperCase()`, metti `it.garmentName + ', ' + it.operationName`.
+    
     final h = _estimateHeightPts(
       lines: _countLines(text),
       fontSize: _fontSizeReceipt,
@@ -119,11 +181,10 @@ class PrintService {
       pw.Page(
         pageFormat: PdfPageFormat(_mm(_receiptWidthMm), h, marginAll: 0),
         build: (_) => pw.Padding(
-          padding: _receiptPadding(),
+          padding: _printPadding(),
           child: pw.Text(
             text,
-            softWrap: false, // IMPORTANT: niente wrap fantasma
-            textAlign: pw.TextAlign.left,
+            softWrap: false,
             style: pw.TextStyle(
               font: mono,
               fontSize: _fontSizeReceipt,
@@ -135,143 +196,133 @@ class PrintService {
     );
   }
 
-  // =========================
-  //  2) PDF BOLLINI (N pagine)
-  // =========================
-  static Future<Uint8List> buildLabelsPdfBytes(PrintOrderData data) async {
-    final doc = pw.Document();
-    final mono = await PdfGoogleFonts.notoSansMonoRegular();
-
-    _addAllLabelPages(doc: doc, mono: mono, data: data);
-
-    return doc.save();
-  }
-
-  static void _addAllLabelPages({
+  // --- DISEGNO BOLLINO AGGIORNATO (FONT PIU PICCOLO + OPERAZIONE) ---
+  static void _addSingleLabelPage({
     required pw.Document doc,
     required pw.Font mono,
+    required pw.Font monoBold,
     required PrintOrderData data,
+    required PrintOrderItem item,
   }) {
-    for (final item in data.items) {
-      for (int i = 0; i < item.qty; i++) {
-        final labelText = ReceiptBuilder.bollino(
-          ticket: data.ticketNumber,
-          client: data.clientName,
-          garment: item.garmentName,
-          pickup: data.pickupDate,
-          slot: data.pickupSlot,
-        );
+    final style = pw.TextStyle(font: mono, fontSize: _fontSizeLabel);
+    final styleBold = pw.TextStyle(font: monoBold, fontSize: _fontSizeLabel);
+    // RIDOTTO FONT CAPO A 8.5 PER FAR ENTRARE "CAPO + OPERAZIONE"
+    final styleGarment = pw.TextStyle(font: monoBold, fontSize: 8.5); 
 
-        doc.addPage(
-          pw.Page(
-            pageFormat: PdfPageFormat(
-              _mm(_labelWidthMm),
-              _mm(_labelHeightMm),
-              marginAll: 0,
-            ),
-            build: (_) => pw.Padding(
-              padding: pw.EdgeInsets.all(_mm(3)),
-              child: pw.Text(
-                labelText,
-                softWrap: false,
-                textAlign: pw.TextAlign.left,
-                style: pw.TextStyle(
-                  font: mono,
-                  fontSize: _fontSizeLabel,
-                  height: _lineHeightLabel,
+    final labelPadding = pw.EdgeInsets.fromLTRB(_mm(_padLeftMm), _mm(1), _mm(_padRightMm), _mm(0));
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat(_mm(_labelWidthMm), _mm(_labelHeightMm), marginAll: 0),
+        build: (context) {
+          return pw.Padding(
+            padding: labelPadding,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              mainAxisSize: pw.MainAxisSize.max,
+              mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly, 
+              children: [
+                
+                // RIGA 1: Codice e Partita
+                pw.Row(
+                  children: [
+                    pw.Text('Cod: ${data.ticketNumber}', style: style),
+                    pw.SizedBox(width: _mm(8)), 
+                    pw.Text('Partita: ${data.ticketNumber}', style: styleBold),
+                  ],
                 ),
-              ),
+                
+                // RIGA 2: Dati Cliente
+                pw.Row(
+                  children: [
+                      pw.Text('Dati: ', style: style),
+                      pw.Expanded(
+                        child: pw.Text('${data.clientName}', style: styleBold, maxLines: 1, overflow: pw.TextOverflow.clip),
+                      )
+                  ]
+                ),
+                
+                // RIGA 3: Accettazione e Ritiro
+                pw.Row(
+                  children: [
+                    pw.Text('Acc: ${_fmtDate(data.createdAt)}', style: style),
+                    pw.SizedBox(width: _mm(5)), 
+                    pw.Text('Rit: ${_fmtDate(data.pickupDate)}', style: styleBold),
+                  ],
+                ),
+                
+                // RIGA 4: Headers
+                pw.Row(
+                  children: [
+                    pw.Expanded(flex: 3, child: pw.Text('Descrizione', style: style)),
+                    pw.Expanded(flex: 1, child: pw.Text('Note', style: style)),
+                  ],
+                ),
+                
+                pw.Divider(thickness: 0.5, color: PdfColors.grey800, height: 2),
+                
+                // RIGA 5: CAPO + OPERAZIONE
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Expanded(
+                      flex: 3,
+                      child: pw.Text(
+                        _formatItemName(item), // Qui stampa "Camicia, stiro" (no uppercase)
+                        style: styleGarment, 
+                        maxLines: 2
+                      ),
+                    ),
+                    pw.Expanded(flex: 1, child: pw.Container()),
+                  ],
+                ),
+              ],
             ),
-          ),
-        );
-      }
-    }
+          );
+        },
+      ),
+    );
   }
 
   // =========================
-  //  3) PDF UNICO (ricevute + bollini)
+  //  4) KIOSK MODE
   // =========================
-  /// Questo è quello che ti serve per avere **1 SOLO dialog** nel fallback.
-  static Future<Uint8List> buildAllInOnePdfBytes(PrintOrderData data) async {
-    final doc = pw.Document();
-    final mono = await PdfGoogleFonts.notoSansMonoRegular();
-
-    // 1) ricevuta lavanderia
-    _addReceiptPage(
-      doc: doc,
-      mono: mono,
-      text: ReceiptBuilder.lavanderia(data),
-    );
-
-    // 2) ricevuta cliente
-    _addReceiptPage(
-      doc: doc,
-      mono: mono,
-      text: ReceiptBuilder.cliente(data),
-    );
-
-    // 3) bollini (N pagine)
-    _addAllLabelPages(doc: doc, mono: mono, data: data);
-
-    return doc.save();
-  }
-
-  // =========================
-  //  4) STAMPA KIOSK (NO DIALOG)
-  // =========================
-  /// Prova a stampare direttamente su TM-U220.
-  /// - Se trova TM-U220: stampa ricevute + bollini senza dialog.
-  /// - Se NON trova TM-U220: ritorna false (così vai nel fallback con dialog).
   static Future<bool> printAllKiosk(PrintOrderData data) async {
     final printers = await Printing.listPrinters();
     if (printers.isEmpty) return false;
 
-    // cerco SOLO TM-U220, niente fallback su "prima stampante"
     final target = printers.cast<Printer?>().firstWhere(
-          (p) =>
-              p != null &&
-              (p.name ?? '').toUpperCase().contains('TM-U220'),
+          (p) => p != null && (p.name ?? '').toUpperCase().contains('TM-U220'),
           orElse: () => null,
         );
 
-    if (target == null) {
-      // Se non c'è la stampante vera, NON stampo su OneNote/PDF virtuali
-      return false;
+    if (target == null) return false;
+
+    await Printing.directPrintPdf(
+      printer: target,
+      name: 'Lavanderia_${data.ticketNumber}',
+      forceCustomPrintPaper: true,
+      onLayout: (_) async => buildLaundryOnlyPdfBytes(data),
+    );
+
+    await Printing.directPrintPdf(
+      printer: target,
+      name: 'Cliente_${data.ticketNumber}',
+      forceCustomPrintPaper: true,
+      onLayout: (_) async => buildClientOnlyPdfBytes(data),
+    );
+
+    for (final item in data.items) {
+      for (int i = 0; i < item.qty; i++) {
+        await Printing.directPrintPdf(
+          printer: target,
+          name: 'Bollino_${item.garmentName}_$i',
+          forceCustomPrintPaper: true,
+          onLayout: (_) async => buildSingleLabelItemPdfBytes(data, item),
+        );
+      }
     }
 
-    // (A) Ricevute (2 pagine, 80mm)
-    final ok1 = await Printing.directPrintPdf(
-      printer: target,
-      name: 'Ricevute_${data.ticketNumber}',
-      forceCustomPrintPaper: true,
-      onLayout: (_) async => buildReceiptsPdfBytes(data),
-    );
-    if (!ok1) return false;
-
-    // (B) Bollini (N pagine, 70x45)
-    final ok2 = await Printing.directPrintPdf(
-      printer: target,
-      name: 'Bollini_${data.ticketNumber}',
-      forceCustomPrintPaper: true,
-      onLayout: (_) async => buildLabelsPdfBytes(data),
-    );
-
-    return ok2;
-  }
-
-  // =========================
-  //  (OPZ) STAMPA CON DUE DIALOG
-  // =========================
-  /// Non usarlo nel flusso principale: è solo un tool “dev”.
-  static Future<void> printWithDialogTwoSteps(PrintOrderData data) async {
-    await Printing.layoutPdf(
-      name: 'Ricevute_${data.ticketNumber}',
-      onLayout: (_) async => buildReceiptsPdfBytes(data),
-    );
-
-    await Printing.layoutPdf(
-      name: 'Bollini_${data.ticketNumber}',
-      onLayout: (_) async => buildLabelsPdfBytes(data),
-    );
+    return true;
   }
 }
