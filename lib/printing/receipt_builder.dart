@@ -124,7 +124,7 @@ class ReceiptBuilder {
     lines.add('Dati: ${o.clientName}');
     lines.add('Cellulare: ${o.clientPhone}');
     lines.add('Accettazione: ${_fmtDate(o.createdAt)}');
-    lines.add('Ritiro: ${_fmtDate(o.pickupDate)}');
+    lines.add('Ritiro: ${_fmtDate(o.pickupDate)} ${o.pickupSlot}');
     lines.add('N. capi: ${_totalQty(o)}');
     lines.add('');
 

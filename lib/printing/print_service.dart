@@ -26,7 +26,7 @@ class PrintService {
 
   // BOLLINO
   static const double _labelWidthMm = 75.0;
-  static const double _labelHeightMm = 40.0; 
+  static const double _labelHeightMm = 50.0; 
   static const double _fontSizeLabel = 8.0; 
 
   // =========================

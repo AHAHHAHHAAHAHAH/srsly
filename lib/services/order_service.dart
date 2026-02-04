@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-//COmmmmi
+
 class OrderService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -22,6 +22,18 @@ class OrderService {
     return companyId;
   }
 
+  // ECCO LA FUNZIONE CHE MANCAVA
+  Stream<QuerySnapshot> getOrdersByClient(String clientId) async* {
+    final companyId = await _getCompanyId();
+    
+    yield* _db
+        .collection('orders')
+        .where('companyId', isEqualTo: companyId)
+        .where('clientId', isEqualTo: clientId)
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
+
   Future<int> createOrder({
     required String clientId,
     required String clientName,
@@ -34,7 +46,7 @@ class OrderService {
     final companyId = await _getCompanyId();
     final companyRef = _db.collection('companies').doc(companyId);
 
-    // 1) Leggo SEMPRE da server l'ultimo numero assegnato
+    // 1) Leggo da server l'ultimo numero assegnato
     final companySnap = await companyRef.get(
       const GetOptions(source: Source.server),
     );
@@ -47,31 +59,20 @@ class OrderService {
     // 2) Il nuovo ticket è last + 1
     final ticketNumber = lastIssued + 1;
 
-    // 3) Aggiorno il contatore (lastIssued = ticketNumber)
+    // 3) Aggiorno il contatore
     await companyRef.set(
       {'nextTicketNumber': ticketNumber},
       SetOptions(merge: true),
     );
-final double total = items.fold(0.0, (s, it) {
-  final qty = (it['qty'] as num?)?.toInt() ?? 0;
 
-  // se hai già lineTotal calcolato lato UI, usalo (è il più sicuro)
-  final lineTotal = (it['lineTotal'] as num?)?.toDouble();
-  if (lineTotal != null) return s + lineTotal;
-
-  // fallback: unitPrice * qty
-  final unit = (it['unitPrice'] as num?)?.toDouble() ?? 0.0;
-  return s + (unit * qty);
-});
-
-    // 4) Creo ordine con quel ticket
+    // 4) Creo ordine
     await _db.collection('orders').add({
       'companyId': companyId,
       'clientId': clientId,
       'clientName': clientName,
       'clientPhone': clientPhone,
       'ticketNumber': ticketNumber,
-      'partitaNumber': ticketNumber,
+      'partitaNumber': ticketNumber, // Se vuoi usare questo nome
       'items': items,
       'total': total,
       'deposit': deposit,
@@ -84,4 +85,3 @@ final double total = items.fold(0.0, (s, it) {
 
   static Timestamp ts(DateTime d) => Timestamp.fromDate(d);
 }
-//MODIFICA cRISTOLAMADONNNADEDDIO

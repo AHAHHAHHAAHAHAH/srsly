@@ -14,35 +14,31 @@ enum AppSection { home, capi, ordini, tabellaCapi, settings }
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
-  static _AppShellState of(BuildContext context) =>
-      context.findAncestorStateOfType<_AppShellState>()!;
+  static AppShellState of(BuildContext context) =>
+      context.findAncestorStateOfType<AppShellState>()!;
 
   @override
-  State<AppShell> createState() => _AppShellState();
+  State<AppShell> createState() => AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class AppShellState extends State<AppShell> {
   AppSection _section = AppSection.home;
-
-  /// Cliente “in servizio” (valido solo quando impostato esplicitamente)
   String? _activeClientId;
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  /// Navigazione “normale” (sidebar): resetta sempre il cliente attivo.
   void goToSection(AppSection section) {
     setState(() {
       _section = section;
-      _activeClientId = null; // ✅ reset contesto cliente
+      _activeClientId = null;
     });
   }
 
-  /// Navigazione “con contesto cliente” (click su cliente / storico)
   void goToSectionForClient(AppSection section, {required String clientId}) {
     setState(() {
       _section = section;
-      _activeClientId = clientId; // ✅ set contesto cliente
+      _activeClientId = clientId;
     });
   }
 
@@ -60,109 +56,100 @@ class _AppShellState extends State<AppShell> {
     return companyId;
   }
 
- int? get currentPreviewTicket => _lastHeaderPreview;
-int? _lastHeaderPreview;
+  int? get currentPreviewTicket => _lastHeaderPreview;
+  int? _lastHeaderPreview;
 
-Future<_HeaderData?> _loadHeaderData() async {
-  final clientId = _activeClientId;
-  if (clientId == null) return null;
+  Future<_HeaderData?> _loadHeaderData() async {
+    final clientId = _activeClientId;
+    if (clientId == null) return null;
 
-  final clientSnap = await _db.collection('clients').doc(clientId).get();
-  final clientData = clientSnap.data();
-  if (clientData == null) return null;
+    final clientSnap = await _db.collection('clients').doc(clientId).get();
+    final clientData = clientSnap.data();
+    if (clientData == null) return null;
 
-  final fullName = (clientData['fullName'] ?? '') as String;
-  final phone = (clientData['number'] ?? '') as String;
+    final fullName = (clientData['fullName'] ?? '') as String;
+    final phone = (clientData['number'] ?? '') as String;
 
-  final companyId = await _getCompanyId();
-  final companySnap = await _db.collection('companies').doc(companyId).get();
-  final companyData = companySnap.data() ?? {};
+    final companyId = await _getCompanyId();
+    final companySnap = await _db.collection('companies').doc(companyId).get();
+    final companyData = companySnap.data() ?? {};
 
-  final current = companyData['nextTicketNumber'];
-  final int currentN = (current is int) ? current : 0;
+    final current = companyData['nextTicketNumber'];
+    final int currentN = (current is int) ? current : 0;
+    final int preview = currentN + 1;
 
-  final int preview = currentN + 1;
+    _lastHeaderPreview = preview;
 
-  // ✅ memorizzo l'ultimo preview calcolato
-  _lastHeaderPreview = preview;
+    return _HeaderData(
+      fullName: fullName,
+      phone: phone,
+      previewNumber: preview,
+    );
+  }
 
-  return _HeaderData(
-    fullName: fullName,
-    phone: phone,
-    previewNumber: preview,
-  );
-}
+  Widget _headerBar() {
+    // MODIFICA: Se siamo in ORDINI, nascondiamo questo header standard duplicato
+    if (_activeClientId == null || _section == AppSection.ordini) {
+      return const SizedBox.shrink();
+    }
 
+    return FutureBuilder<_HeaderData?>(
+      key: ValueKey('header_${_activeClientId}'),
+      future: _loadHeaderData(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(height: 26);
+        }
 
-Widget _headerBar() {
-  // Se non c'è cliente attivo, niente header (zero spazio).
-  if (_activeClientId == null) return const SizedBox.shrink();
+        final data = snapshot.data;
+        if (data == null) return const SizedBox.shrink();
 
-  return FutureBuilder<_HeaderData?>(
-    key: ValueKey('header_${_activeClientId}'),
-    future: _loadHeaderData(),
-    builder: (context, snapshot) {
-      // mentre carica: riga bassa, niente “spazio enorme”
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        return const SizedBox(height: 26);
-      }
-
-      final data = snapshot.data;
-      if (data == null) return const SizedBox.shrink();
-
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
-        child: Row(
-          children: [
-            // "pill" cliente a sinistra (stile coerente coi box)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.black.withOpacity(0.07)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.person, size: 16, color: Colors.grey.shade700),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${data.fullName} · ${data.phone}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.black.withOpacity(0.07)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.person, size: 16, color: Colors.grey.shade700),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${data.fullName} · ${data.phone}',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                     ),
-                  ),
-                ],
-              ),
-            ),
-
-            const Spacer(),
-
-            // chip a destra (non nero pieno, più elegante e coerente)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.04),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: Colors.black.withOpacity(0.10)),
-              ),
-              child: Text(
-                'Cod. Cliente #${data.previewNumber} · Partita n° #${data.previewNumber}',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
+                  ],
                 ),
               ),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.black.withOpacity(0.10)),
+                ),
+                child: Text(
+                  'Cod. Cliente #${data.previewNumber} · Partita n° #${data.previewNumber}',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -190,13 +177,13 @@ Widget _headerBar() {
         children: [
           Sidebar(
             current: _section,
-            onSelect: goToSection, // ✅ sidebar = reset cliente
+            onSelect: goToSection,
           ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _headerBar(), // ✅ QUI: stessa riga nome/telefono + pillola
+                _headerBar(),
                 Expanded(child: body),
               ],
             ),
