@@ -37,7 +37,7 @@ class _AddClientDialogState extends State<AddClientDialog> {
       _loading = true;
       _error = null;
     });
-
+/////
     try {
       await _service.addClient(fullName: fullName, number: number);
       if (!mounted) return;
