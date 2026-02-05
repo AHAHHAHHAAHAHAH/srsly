@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'app_shell.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class Sidebar extends StatelessWidget {
   final AppSection current;
@@ -56,8 +58,14 @@ class Sidebar extends StatelessWidget {
           _item(Icons.checkroom, 'Capi', AppSection.capi),
           const SizedBox(height: 8),
           _item(Icons.receipt_long, 'Ordini', AppSection.ordini),
+          
           const SizedBox(height: 8),
-          _item(Icons.table_chart, 'Tabella capi', AppSection.tabellaCapi),
+          _item(Icons.table_chart, 'Tabella Capi', AppSection.tabellaCapi),
+          
+          const SizedBox(height: 8),
+          // NUOVA VOCE
+          _item(Icons.people, 'Tabella Clienti', AppSection.tabellaClienti),
+          
           const Spacer(),
           _item(Icons.settings, 'Impostazioni', AppSection.settings),
         ],

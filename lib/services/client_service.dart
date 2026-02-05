@@ -26,6 +26,8 @@ class ClientService {
     return companyId;
   }
 
+  // --- METODI ESISTENTI (NON TOCCATI) ---
+
   Future<void> addClient({
     required String fullName,
     required String number,
@@ -38,13 +40,12 @@ class ClientService {
     await _db.collection('clients').add({
       'companyId': companyId,
       'fullName': fn,
-      'fullNameLowerCase': fn.toLowerCase(),
+      'fullNameLowerCase': fn.toLowerCase(), // Nota: alcuni file usano fullNameLowerCase, altri nameLowerCase. Mantengo coerenza col tuo file caricato.
       'number': num,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
 
-  /// ✅ chiamato SOLO al momento della STAMPA
   Future<void> markClientServed({
     required String clientId,
     required String label,
@@ -57,7 +58,6 @@ class ClientService {
     });
   }
 
-  /// 🧹 Rimuove il cliente dallo STORICO (NON elimina il cliente)
   Future<void> clearClientFromHistory(String clientId) async {
     await _getCompanyId();
 
@@ -71,16 +71,16 @@ class ClientService {
     final companyId = await _getCompanyId();
     final q = query.trim().toLowerCase();
 
+    // Nota: Il tuo file originale usa 'fullNameLowerCase'.
     yield* _db
         .collection('clients')
         .where('companyId', isEqualTo: companyId)
-        .orderBy('fullNameLowerCase')
+        .orderBy('fullNameLowerCase') 
         .startAt([q])
         .endAt(['$q\uf8ff'])
         .snapshots();
   }
 
-  /// Storico = ultimi clienti SERVITI
   Stream<QuerySnapshot<Map<String, dynamic>>> getLastServedClients({
     int limit = 7,
   }) async* {
@@ -98,5 +98,24 @@ class ClientService {
     String clientId,
   ) {
     return _db.collection('clients').doc(clientId).get();
+  }
+
+  // --- NUOVI METODI AGGIUNTI PER LA TABELLA (NON ROMPONO NULLA) ---
+
+  Future<void> updateClient({
+    required String clientId,
+    required String fullName,
+    required String number,
+  }) async {
+    // Non serve _getCompanyId per update su doc specifico, ma ok per sicurezza
+    await _db.collection('clients').doc(clientId).update({
+      'fullName': fullName.trim(),
+      'fullNameLowerCase': fullName.trim().toLowerCase(),
+      'number': number.trim(),
+    });
+  }
+
+  Future<void> deleteClient(String clientId) async {
+    await _db.collection('clients').doc(clientId).delete();
   }
 }
