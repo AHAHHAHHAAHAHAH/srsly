@@ -23,7 +23,6 @@ import '../printing/print_preview_dialog.dart';
 class CapiScreen extends StatefulWidget {
   final String? clientId;
 
-  /// clientId può essere null: la pagina deve restare comunque utilizzabile
   const CapiScreen({super.key, required this.clientId});
 
   @override
@@ -75,7 +74,7 @@ class _CapiScreenState extends State<CapiScreen> {
   double _dragStartOffset = 0;
   ScrollController? _dragController;
 
-  // ✅ width fisse (necessarie per scroll orizzontale senza Expanded)
+  // ✅ width fisse
   static const double _wCapo = 190;
   static const double _wQty = 100;
   static const double _wPrezzo = 120;
@@ -104,7 +103,7 @@ class _CapiScreenState extends State<CapiScreen> {
       _wAddBtn +
       _gapBig +
       _wDelBtn +
-      24; // 👈 buffer anti-overflow
+      24; 
 
   @override
   void initState() {
@@ -158,7 +157,7 @@ class _CapiScreenState extends State<CapiScreen> {
     docs.sort((a, b) {
       final da = _dtFrom(a.data()['createdAt']);
       final db = _dtFrom(b.data()['createdAt']);
-      return da.compareTo(db); // ✅ vecchi -> nuovi
+      return da.compareTo(db); 
     });
 
     _operationTypes = docs
@@ -172,8 +171,6 @@ class _CapiScreenState extends State<CapiScreen> {
     setState(() => _typesLoaded = true);
   }
 
-  // MODIFICATO: Non serve più fetchare prezzo qui, lo facciamo quando seleziona
-  // Ma la logica di filtro è nel build
   Future<void> _onTypeSelected(_PendingOp op, String typeId) async {
     final prices = await _garmentService.getPricesForGarment(op.garmentId);
     final price = prices[typeId] ?? 0;
@@ -316,7 +313,6 @@ class _CapiScreenState extends State<CapiScreen> {
       pickupDate: DateTime.now().add(const Duration(days: 1)),
       pickupSlot: 'Mattina',
       hScrollCtrl: ScrollController(),
-      // Inizializza liste vuote per la logica "caricamento"
       validOpIds: [],
       isOpsLoaded: false,
     );
@@ -325,7 +321,6 @@ class _CapiScreenState extends State<CapiScreen> {
       _pending.add(op);
     });
 
-    // FETCH DEI PREZZI SPECIFICI PER QUESTO CAPO
     _garmentService.getPricesForGarment(id).then((pricesMap) {
       if (!mounted) return;
       setState(() {
@@ -547,7 +542,6 @@ class _CapiScreenState extends State<CapiScreen> {
 
     setState(() => _isPrinting = true);
 
-    // ✅ copie IMMUTABILI (non usare _cart dopo)
     final cartCopy = List<_CartItem>.from(_cart);
     final totalCopy = cartCopy.fold(0.0, (s, x) => s + x.price);
     final depositCopy = _depositValue();
@@ -570,7 +564,6 @@ class _CapiScreenState extends State<CapiScreen> {
 
       final company = companySnap.data() ?? {};
 
-      // campi REALI su companies
       final companyName = (company['companyName'] ?? '').toString();
       final ownerFullName = (company['ownerFullName'] ?? '').toString();
       final addressStreet = (company['addressStreet'] ?? '').toString();
@@ -578,14 +571,12 @@ class _CapiScreenState extends State<CapiScreen> {
       final addressCity = (company['addressCity'] ?? '').toString();
       final ownerPhone = (company['ownerPhone'] ?? '').toString();
 
-      // ✅ ticket PREVIEW
       final previewTicket = AppShell.of(context).currentPreviewTicket;
       if (previewTicket == null) {
         _toast('Preview ticket non disponibile (header non caricato)');
         return;
       }
 
-      // ✅ dati PREVIEW
       final previewData = PrintOrderData(
         ticketNumber: previewTicket,
         clientName: (client['fullName'] ?? '') as String,
@@ -612,7 +603,6 @@ class _CapiScreenState extends State<CapiScreen> {
         ownerPhone: ownerPhone,
       );
 
-      // ✅ PREVIEW + conferma
       final bool? confirmed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -624,7 +614,6 @@ class _CapiScreenState extends State<CapiScreen> {
         return;
       }
 
-      // ✅ SOLO ORA: preparo items per Firestore
       final orderItems = cartCopy.map((c) {
         return {
           'garmentId': c.garmentId,
@@ -639,7 +628,6 @@ class _CapiScreenState extends State<CapiScreen> {
         };
       }).toList();
 
-      // ✅ salva ordine e ottieni ticket REALE salvato
       final int ticketNumber = await OrderService().createOrder(
         clientId: widget.clientId!,
         clientName: (client['fullName'] ?? '') as String,
@@ -650,7 +638,6 @@ class _CapiScreenState extends State<CapiScreen> {
         total: totalCopy,
       );
 
-      // ✅ stampo con ticket REALE
       final finalData = PrintOrderData(
         ticketNumber: ticketNumber,
         clientName: previewData.clientName,
@@ -677,7 +664,6 @@ class _CapiScreenState extends State<CapiScreen> {
         label: 'Scontrino',
       );
 
-      // ✅ reset UI
       setState(() {
         _cart.clear();
         for (final p in _pending) {
@@ -700,12 +686,10 @@ class _CapiScreenState extends State<CapiScreen> {
       if (mounted) setState(() => _isPrinting = false);
     }
   }
-
-  // --- STILI MODIFICATI PER COERENZA CON HOME ---
   
   BoxDecoration _boxDecoration() => BoxDecoration(
     color: Colors.white,
-    borderRadius: BorderRadius.circular(20), // Arrotondamento coerente con Home
+    borderRadius: BorderRadius.circular(20),
     border: Border.all(color: Colors.black.withOpacity(0.04)),
     boxShadow: [
       BoxShadow(
@@ -725,11 +709,10 @@ class _CapiScreenState extends State<CapiScreen> {
         children: [
           const SizedBox(height: 2),
 
-          // BLOCCO SUPERIORE
           Container(
             height: 330,
-            padding: const EdgeInsets.all(24), // Padding aumentato per respiro
-            decoration: _boxDecoration(), // Nuovo stile
+            padding: const EdgeInsets.all(24),
+            decoration: _boxDecoration(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -739,7 +722,7 @@ class _CapiScreenState extends State<CapiScreen> {
                     const Text(
                       'Ricerca capi',
                       style: TextStyle(
-                          fontSize: 20, // Font aumentato
+                          fontSize: 20, 
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.5),
                     ),
@@ -747,7 +730,7 @@ class _CapiScreenState extends State<CapiScreen> {
                       icon: const Icon(Icons.add, size: 18),
                       label: const Text('NUOVO CAPO'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black, // Bottone Nero
+                        backgroundColor: Colors.black,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -772,7 +755,7 @@ class _CapiScreenState extends State<CapiScreen> {
                     hintStyle: TextStyle(color: Colors.grey.shade400),
                     prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
                     filled: true,
-                    fillColor: Colors.grey.shade50, // Sfondo grigio chiaro
+                    fillColor: Colors.grey.shade50,
                     contentPadding: const EdgeInsets.all(16),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -880,12 +863,11 @@ class _CapiScreenState extends State<CapiScreen> {
 
           const SizedBox(height: 18),
 
-          // BLOCCO INFERIORE
           Flexible(
             fit: FlexFit.loose,
             child: Container(
               padding: const EdgeInsets.all(24),
-              decoration: _boxDecoration(), // Nuovo stile
+              decoration: _boxDecoration(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -909,12 +891,6 @@ class _CapiScreenState extends State<CapiScreen> {
                                 const SizedBox(height: 16),
                             itemBuilder: (context, i) {
                               final op = _pending[i];
-
-                              // --- LOGICA FILTRO TENDINA ---
-                              // Se ancora stiamo caricando i prezzi, mostra loader o vuoto
-                              // Se caricato e lista vuota -> Mostra TUTTI (per permettere selezione su nuovi capi)
-                              // Se caricato e lista piena -> Mostra SOLO quelli validi
-                              
                               final List<Map<String, String>> visibleTypes = (!op.isOpsLoaded) 
                                   ? [] 
                                   : (op.validOpIds.isEmpty 
@@ -954,16 +930,17 @@ class _CapiScreenState extends State<CapiScreen> {
                                   child: SizedBox(
                                     width: _rowMinWidth,
                                     child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         SizedBox(
                                           width: _wCapo,
+                                          // Box Capo
                                           child: _fieldBox(
                                             label: 'Capo',
                                             child: Text(
                                               op.garmentName,
                                               style: const TextStyle(
                                                   fontWeight: FontWeight.w700),
-                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ),
@@ -984,38 +961,22 @@ class _CapiScreenState extends State<CapiScreen> {
                                               ),
                                               onChanged: (_) {
                                                 if (!mounted) return;
-
                                                 final qty = _qtyOf(op);
-
                                                 if (op.priceManuallyEdited) {
-                                                  final unit =
-                                                      op.manualUnitPrice;
-
+                                                  final unit = op.manualUnitPrice;
                                                   if (unit != null) {
-                                                    op.priceCtrl.text =
-                                                        _fmtEuro(unit * qty);
+                                                    op.priceCtrl.text = _fmtEuro(unit * qty);
                                                   } else {
-                                                    final currentTotal =
-                                                        _parseEuro(
-                                                            op.priceCtrl.text);
+                                                    final currentTotal = _parseEuro(op.priceCtrl.text);
                                                     if (currentTotal != null) {
-                                                      final derivedUnit =
-                                                          currentTotal /
-                                                              (qty == 0
-                                                                  ? 1
-                                                                  : qty);
-                                                      op.manualUnitPrice =
-                                                          derivedUnit;
-                                                      op.priceCtrl.text =
-                                                          _fmtEuro(derivedUnit *
-                                                              qty);
+                                                      final derivedUnit = currentTotal / (qty == 0 ? 1 : qty);
+                                                      op.manualUnitPrice = derivedUnit;
+                                                      op.priceCtrl.text = _fmtEuro(derivedUnit * qty);
                                                     }
                                                   }
                                                 } else {
-                                                  op.priceCtrl.text = _fmtEuro(
-                                                      op.unitPrice * qty);
+                                                  op.priceCtrl.text = _fmtEuro(op.unitPrice * qty);
                                                 }
-
                                                 setState(() {});
                                               },
                                             ),
@@ -1039,18 +1000,13 @@ class _CapiScreenState extends State<CapiScreen> {
                                               ),
                                               onChanged: (_) {
                                                 if (!mounted) return;
-
                                                 op.priceManuallyEdited = true;
-
-                                                final total =
-                                                    _parseEuro(op.priceCtrl.text);
+                                                final total = _parseEuro(op.priceCtrl.text);
                                                 final qty = _qtyOf(op);
-
                                                 if (total != null && qty > 0) {
                                                   op.manualUnitPrice =
                                                       total / qty;
                                                 }
-
                                                 setState(() {});
                                               },
                                             ),
@@ -1061,125 +1017,90 @@ class _CapiScreenState extends State<CapiScreen> {
                                           width: _wTipo,
                                           child: _fieldBox(
                                             label: 'Tipo',
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              mainAxisSize: MainAxisSize.min,
+                                            child: Stack(
                                               children: [
-                                                // 1) Loading types globali
+                                                // 1. STATI CARICAMENTO
                                                 if (!_typesLoaded)
-                                                  const SizedBox(
-                                                    height: 24,
-                                                    child: Center(
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                              strokeWidth: 2),
-                                                    ),
-                                                  )
-                                                
-                                                // 2) Loading tipi specifici del capo (Nuovo)
+                                                  const Padding(padding: EdgeInsets.symmetric(vertical: 2), child: SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)))
                                                 else if (!op.isOpsLoaded)
-                                                   const SizedBox(height: 24, width: 24, child: Padding(padding: EdgeInsets.all(4), child: CircularProgressIndicator(strokeWidth: 2)))
-
-                                                // 3) Dropdown
+                                                  const Padding(padding: EdgeInsets.symmetric(vertical: 2), child: SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                                                else if (visibleTypes.isEmpty)
+                                                  const Padding(padding: EdgeInsets.only(top: 2), child: Text('Nessun tipo', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 11)))
                                                 else
-                                                  DropdownButtonHideUnderline(
-                                                    child:
-                                                        DropdownButton<String>(
-                                                      key: ValueKey(
-                                                          '${op.garmentId}_${op.typeId}'),
-                                                      value: (op.typeId !=
-                                                                  null &&
-                                                              visibleTypes.any(
-                                                                  (t) =>
-                                                                      t['id'] ==
-                                                                      op.typeId))
-                                                          ? op.typeId
-                                                          : null,
-                                                      hint: const Text(
-                                                          'Seleziona'),
-                                                      isDense: true,
-                                                      items: visibleTypes
-                                                          .map((t) {
-                                                        return DropdownMenuItem<
-                                                            String>(
-                                                          value: t['id'],
-                                                          child:
-                                                              Text(t['name']!),
-                                                        );
-                                                      }).toList(),
-                                                      onChanged: (typeId) {
-                                                        if (typeId == null)
-                                                          return;
-
-                                                        final type = _operationTypes
-                                                            .firstWhere((t) =>
-                                                                t['id'] ==
-                                                                typeId);
-                                                        final typeName =
-                                                            type['name']!;
-
-                                                        setState(() {
-                                                          op.typeId = typeId;
-                                                          op.typeName =
-                                                              typeName;
-                                                          op.priceManuallyEdited =
-                                                              false;
-                                                          op.priceCtrl.text =
-                                                              _fmtEuro(0);
-                                                        });
-
-                                                        () async {
-                                                          try {
-                                                            final prices = await _garmentService
-                                                                .getPricesForGarment(
-                                                                    op.garmentId);
-                                                            final price = prices[
-                                                                    typeId] ??
-                                                                0;
-
-                                                            if (!mounted)
-                                                              return;
-                                                            setState(() {
-                                                              op.unitPrice =
-                                                                  (price as num)
-                                                                      .toDouble();
-                                                              final qty =
-                                                                  _qtyOf(op);
-                                                              op.manualUnitPrice =
-                                                                  null;
-                                                              op.priceManuallyEdited =
-                                                                  false;
-                                                              op.priceCtrl
-                                                                      .text =
-                                                                  _fmtEuro(
-                                                                      op.unitPrice *
-                                                                          qty);
-                                                            });
-                                                          } catch (e) {
-                                                            if (!mounted)
-                                                              return;
-                                                            _toast(
-                                                                'Prezzo non leggibile (rules/permessi): $e');
-                                                          }
-                                                        }();
-                                                      },
+                                                // 2. TESTO VISIBILE "MANUALE" (NO Grassetto, NO Troncamento)
+                                                  Padding(
+                                                    padding: const EdgeInsets.only(right: 20.0, top: 2), 
+                                                    child: Text(
+                                                      (op.typeId != null && op.typeName.isNotEmpty) 
+                                                          ? op.typeName 
+                                                          : 'Seleziona',
+                                                      style: const TextStyle(
+                                                        fontWeight: FontWeight.normal, // RIMOSSO grassetto
+                                                        color: Colors.black87,
+                                                      ),
                                                     ),
                                                   ),
+                                                
+                                                // 3. ICONA FRECCIA
+                                                if (_typesLoaded && op.isOpsLoaded && visibleTypes.isNotEmpty)
+                                                  const Positioned(
+                                                    right: -2,
+                                                    top: -2,
+                                                    child: Icon(Icons.arrow_drop_down, color: Colors.black54),
+                                                  ),
 
-                                                // 3) Messaggio rosso se typesLoaded ma lista vuota
-                                                if (_typesLoaded &&
-                                                    _operationTypes.isEmpty)
-                                                  const Padding(
-                                                    padding: EdgeInsets.only(
-                                                        top: 6),
-                                                    child: Text(
-                                                      'Nessun tipo trovato',
-                                                      style: TextStyle(
-                                                        color: Colors.red,
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w700,
+                                                // 4. DROPDOWN "FANTASMA" (per click e menu)
+                                                if (_typesLoaded && op.isOpsLoaded && visibleTypes.isNotEmpty)
+                                                  Positioned.fill(
+                                                    child: DropdownButtonHideUnderline(
+                                                      child: DropdownButton<String>(
+                                                        isExpanded: true,
+                                                        value: (op.typeId != null && visibleTypes.any((t) => t['id'] == op.typeId))
+                                                            ? op.typeId
+                                                            : null,
+                                                        // MENU VISIBILE (rimosso style: transparent)
+                                                        items: visibleTypes.map((t) {
+                                                          return DropdownMenuItem<String>(
+                                                            value: t['id'],
+                                                            child: Text(t['name']!, 
+                                                              style: const TextStyle(color: Colors.black87), // Colore esplicito per il menu
+                                                              overflow: TextOverflow.visible
+                                                            ),
+                                                          );
+                                                        }).toList(),
+                                                        onChanged: (typeId) {
+                                                          if (typeId == null) return;
+                                                          final type = _operationTypes.firstWhere((t) => t['id'] == typeId);
+                                                          setState(() {
+                                                            op.typeId = typeId;
+                                                            op.typeName = type['name']!;
+                                                            op.priceManuallyEdited = false;
+                                                            op.priceCtrl.text = _fmtEuro(0);
+                                                          });
+
+                                                          () async {
+                                                            try {
+                                                              final prices = await _garmentService.getPricesForGarment(op.garmentId);
+                                                              final price = prices[typeId] ?? 0;
+                                                              if (!mounted) return;
+                                                              setState(() {
+                                                                op.unitPrice = (price as num).toDouble();
+                                                                final qty = _qtyOf(op);
+                                                                op.manualUnitPrice = null;
+                                                                op.priceManuallyEdited = false;
+                                                                op.priceCtrl.text = _fmtEuro(op.unitPrice * qty);
+                                                              });
+                                                            } catch (e) {
+                                                              if (!mounted) return;
+                                                              _toast('Prezzo non leggibile: $e');
+                                                            }
+                                                          }();
+                                                        },
+                                                        // ICONA E TESTO BOTTONE NASCOSTI (perché usiamo il layer manuale)
+                                                        icon: const SizedBox.shrink(),
+                                                        selectedItemBuilder: (context) {
+                                                          return visibleTypes.map((e) => const SizedBox.shrink()).toList();
+                                                        },
                                                       ),
                                                     ),
                                                   ),
@@ -1187,6 +1108,7 @@ class _CapiScreenState extends State<CapiScreen> {
                                             ),
                                           ),
                                         ),
+                                        
                                         const SizedBox(width: _gap),
                                         SizedBox(
                                           width: _wRilascio,
@@ -1196,7 +1118,6 @@ class _CapiScreenState extends State<CapiScreen> {
                                               _fmtDateTime(op.releaseDate),
                                               style: const TextStyle(
                                                   fontWeight: FontWeight.w700),
-                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ),
@@ -1218,7 +1139,7 @@ class _CapiScreenState extends State<CapiScreen> {
                                                       lastDate: DateTime.now()
                                                           .add(const Duration(
                                                               days: 365)),
-                                                      locale: const Locale('it', 'IT'), // <--- CORREZIONE: ITALIANO QUI
+                                                      locale: const Locale('it', 'IT'),
                                                     );
                                                     if (picked == null) return;
 
@@ -1244,6 +1165,7 @@ class _CapiScreenState extends State<CapiScreen> {
                                                         DropdownButton<String>(
                                                       value: op.pickupSlot,
                                                       isDense: true,
+                                                      isExpanded: true, 
                                                       items: const [
                                                         DropdownMenuItem(
                                                           value: 'Mattina',
@@ -1269,15 +1191,16 @@ class _CapiScreenState extends State<CapiScreen> {
                                           ),
                                         ),
                                         const SizedBox(width: 12),
+                                        // BOTTONI
                                         SizedBox(
                                           width: _wAddBtn,
-                                          height: 44,
+                                          height: 44, 
                                           child: ElevatedButton(
                                             onPressed: (op.typeId == null)
                                                 ? null
                                                 : () => _addPendingToCart(i),
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.black, // Tasto Nero
+                                              backgroundColor: Colors.black,
                                               foregroundColor: Colors.white,
                                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                               elevation: 0,
@@ -1339,7 +1262,7 @@ class _CapiScreenState extends State<CapiScreen> {
                         icon: const Icon(Icons.print),
                         label: const Text('Stampa'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black, // Tasto Nero
+                          backgroundColor: Colors.black, 
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 18, vertical: 12),
@@ -1413,9 +1336,9 @@ class _CapiScreenState extends State<CapiScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50, // Sfondo leggermente grigio come Home
+        color: Colors.grey.shade50, 
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200), // Bordo più delicato
+        border: Border.all(color: Colors.grey.shade200), 
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1445,7 +1368,6 @@ class _PendingOp {
   DateTime pickupDate;
   String pickupSlot;
 
-  // prezzo unitario corrente (da Firestore per (garment,type))
   double unitPrice;
   double? manualUnitPrice;
 
@@ -1462,7 +1384,6 @@ class _PendingOp {
 
   int currentQty;
 
-  // --- NUOVI CAMPI PER LA LOGICA DI CARICAMENTO ---
   List<String> validOpIds;
   bool isOpsLoaded;
 

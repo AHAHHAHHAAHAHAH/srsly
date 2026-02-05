@@ -142,34 +142,13 @@ class PrintService {
   //  DISEGNO PAGINE
   // =========================
   
-  // Modificato per accettare data invece di text string, così possiamo formattare i capi qui
   static void _addReceiptPage({
     required pw.Document doc,
     required pw.Font mono,
     required PrintOrderData data,
     required bool isClientCopy,
   }) {
-    // Recuperiamo il testo base (intestazioni) dal builder, MA SENZA LA TABELLA OGGETTI
-    // Nota: Per fare questo velocemente senza toccare receipt_builder, usiamo la funzione normale
-    // ma la "puliamo" o meglio: RIGENERIAMO LA LISTA CAPI QUI CON LA NUOVA FORMATTAZIONE.
-    
-    // Per semplicità e sicurezza, usiamo il testo generato da ReceiptBuilder 
-    // MA dobbiamo assicurarci che ReceiptBuilder NON faccia toUpperCase sugli items.
-    // SE NON POSSIAMO MODIFICARE RECEIPT_BUILDER ORA, DOBBIAMO SOSTITUIRE IL TESTO AL VOLO.
-    // OPPURE (Meglio): Usiamo ReceiptBuilder normalmente e ci fidiamo che tu abbia tolto toUpperCase di là, 
-    // oppure facciamo un replace se ReceiptBuilder li fa maiuscoli.
-    
-    // SOLUZIONE PULITA: Chiamiamo ReceiptBuilder passando i dati.
-    // Se ReceiptBuilder mette tutto maiuscolo, lo correggeremo nel ReceiptBuilder.
-    // MA VISTO CHE HAI CHIESTO DI MODIFICARE SOLO QUI:
-    // Ti consiglio di andare in ReceiptBuilder e togliere .toUpperCase() alla riga 80 e 152.
-    // Se non puoi, dimmelo. Assumo che ReceiptBuilder stampi quello che gli passi.
-    
     String text = isClientCopy ? ReceiptBuilder.cliente(data) : ReceiptBuilder.lavanderia(data);
-    
-    // Se ReceiptBuilder usa toUpperCase(), questo codice qui sotto NON può farci nulla se riceve già la stringa fatta.
-    // QUINDI: DEVI ANDARE IN `receipt_builder.dart` E TOGLIERE `.toUpperCase()` dove stampa il nome del capo.
-    // Esempio: invece di `it.garmentName.toUpperCase()`, metti `it.garmentName + ', ' + it.operationName`.
     
     final h = _estimateHeightPts(
       lines: _countLines(text),
@@ -206,10 +185,10 @@ class PrintService {
   }) {
     final style = pw.TextStyle(font: mono, fontSize: _fontSizeLabel);
     final styleBold = pw.TextStyle(font: monoBold, fontSize: _fontSizeLabel);
-    // RIDOTTO FONT CAPO A 8.5 PER FAR ENTRARE "CAPO + OPERAZIONE"
     final styleGarment = pw.TextStyle(font: monoBold, fontSize: 8.5); 
 
-    final labelPadding = pw.EdgeInsets.fromLTRB(_mm(_padLeftMm), _mm(1), _mm(_padRightMm), _mm(0));
+    // ✅ MODIFICA QUI: AUMENTATO MARGINE INFERIORE DA 0 A 5MM
+    final labelPadding = pw.EdgeInsets.fromLTRB(_mm(_padLeftMm), _mm(1), _mm(_padRightMm), _mm(5));
 
     doc.addPage(
       pw.Page(
@@ -268,7 +247,7 @@ class PrintService {
                     pw.Expanded(
                       flex: 3,
                       child: pw.Text(
-                        _formatItemName(item), // Qui stampa "Camicia, stiro" (no uppercase)
+                        _formatItemName(item), 
                         style: styleGarment, 
                         maxLines: 2
                       ),

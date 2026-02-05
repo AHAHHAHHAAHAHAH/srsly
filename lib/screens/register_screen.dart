@@ -66,12 +66,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  // Stile coerente con HomeScreen e LoginScreen
   InputDecoration _dec(String label, {String? hint, IconData? icon}) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      prefixIcon: icon == null ? null : Icon(icon),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      hintStyle: TextStyle(color: Colors.grey.shade400),
+      prefixIcon: icon == null ? null : Icon(icon, color: Colors.grey.shade400),
+      labelStyle: TextStyle(color: Colors.grey.shade600),
+      filled: true,
+      fillColor: Colors.grey.shade50,
+      contentPadding: const EdgeInsets.all(16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade200),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade200),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.black, width: 1.5),
+      ),
       isDense: true,
     );
   }
@@ -82,91 +99,158 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final cardWidth = w < 560 ? w - 32 : 520.0;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Registrazione')),
+      backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        title: const Text(
+          'Torna al login', 
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)
+        ),
+        centerTitle: false,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
       body: Center(
-        child: SizedBox(
-          width: cardWidth,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: SizedBox(
+            width: cardWidth,
             child: Material(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(18),
+              borderRadius: BorderRadius.circular(24),
+              elevation: 0, // Uso boxshadow manuale per coerenza
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(32),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.storefront_outlined),
-                        SizedBox(width: 10),
-                        Text(
-                          'Crea la tua lavanderia',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.04),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.storefront_outlined, color: Colors.black),
+                        ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Crea la tua lavanderia',
+                                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                              ),
+                              Text(
+                                'Compila i dati aziendali',
+                                style: TextStyle(fontSize: 13, color: Colors.grey),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Questi dati verranno usati anche nello scontrino.',
-                      style: TextStyle(
-                        color: Colors.black.withOpacity(0.65),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Dati attività
-                    TextField(
-                      controller: _companyCtrl,
-                      decoration: _dec(
-                        'Nome lavanderia',
-                        hint: 'Es. Kappa5CristoLaMadonna',
-                        icon: Icons.business_outlined,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    // placeholder SOLO UI (non firestore)
+                    const SizedBox(height: 24),
+                    
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.04),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.black.withOpacity(0.06)),
+                        color: Colors.blue.shade50.withOpacity(0.5),
+                        border: Border.all(color: Colors.blue.shade100),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.local_laundry_service_outlined, color: Colors.black.withOpacity(0.55)),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Smacchiatoria',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: Colors.black.withOpacity(0.7),
+                          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Questi dati verranno usati automaticamente per generare gli scontrini.',
+                              style: TextStyle(
+                                color: Colors.blue.shade900,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 24),
 
-                    const SizedBox(height: 14),
-                    const Divider(),
-                    const SizedBox(height: 14),
+                    // Dati attività
+                    const Text('DATI ATTIVITÀ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1)),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _companyCtrl,
+                      decoration: _dec(
+                        'Nome lavanderia',
+                        hint: 'Es. Lavanderia Pulito & Profumato',
+                        icon: Icons.business_outlined,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // placeholder SOLO UI (non firestore)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.black.withOpacity(0.06)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.local_laundry_service_outlined, color: Colors.black.withOpacity(0.55)),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Smacchiatoria',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black.withOpacity(0.7),
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            'PREDEFINITO',
+                            style: TextStyle(
+                                fontSize: 10, 
+                                fontWeight: FontWeight.bold, 
+                                color: Colors.black.withOpacity(0.4)
+                            ),
+                          )
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+                    const Text('INTESTAZIONE SCONTRINO', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1)),
+                    const SizedBox(height: 12),
 
                     // Dati scontrino
                     TextField(
                       controller: _ownerCtrl,
-                      decoration: _dec('Nome e cognome OWNER', icon: Icons.person_outline),
+                      decoration: _dec('Nome e cognome Titolare', icon: Icons.person_outline),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     TextField(
                       controller: _streetCtrl,
                       decoration: _dec('Via + n° civico', icon: Icons.location_on_outlined),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
@@ -177,7 +261,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             decoration: _dec('CAP'),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 12),
                         Expanded(
                           flex: 3,
                           child: TextField(
@@ -187,16 +271,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     TextField(
                       controller: _phoneCtrl,
                       keyboardType: TextInputType.phone,
-                      decoration: _dec('Telefono OWNER', icon: Icons.call_outlined),
+                      decoration: _dec('Telefono Titolare', icon: Icons.call_outlined),
                     ),
 
-                    const SizedBox(height: 14),
-                    const Divider(),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 24),
+                    const Text('CREDENZIALI ACCESSO', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1)),
+                    const SizedBox(height: 12),
 
                     // Account
                     TextField(
@@ -204,37 +288,52 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       keyboardType: TextInputType.emailAddress,
                       decoration: _dec('Email', icon: Icons.alternate_email),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     TextField(
                       controller: _passCtrl,
                       obscureText: true,
                       decoration: _dec('Password', icon: Icons.lock_outline),
                     ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 24),
 
                     if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
+                       Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.red.shade100),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(_error!, style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w600, fontSize: 13))),
+                          ],
                         ),
                       ),
 
                     SizedBox(
-                      height: 46,
+                      height: 52,
                       child: ElevatedButton.icon(
                         onPressed: _loading ? null : _register,
                         icon: _loading
                             ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                               )
-                            : const Icon(Icons.check),
-                        label: Text(_loading ? 'Creazione...' : 'Crea account'),
+                            : const Icon(Icons.check_circle_outline, size: 20),
+                        label: Text(
+                          _loading ? 'Creazione in corso...' : 'Completa Registrazione',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
                         style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
                       ),
