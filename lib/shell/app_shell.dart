@@ -6,10 +6,12 @@ import '../screens/home_screen.dart';
 import '../screens/capi_screen.dart';
 import '../screens/orders_screen.dart';
 import '../screens/capi_table_screen.dart';
+import '../screens/client_table_screen.dart'; // <--- NUOVO IMPORT
 import '../screens/settings_screen.dart';
 import 'sidebar.dart';
 
-enum AppSection { home, capi, ordini, tabellaCapi, settings }
+// AGGIUNTA 'tabellaClienti' ALLA FINE
+enum AppSection { home, capi, ordini, tabellaCapi, tabellaClienti, settings }
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -88,7 +90,6 @@ class AppShellState extends State<AppShell> {
   }
 
   Widget _headerBar() {
-    // MODIFICA: Se siamo in ORDINI, nascondiamo questo header standard duplicato
     if (_activeClientId == null || _section == AppSection.ordini) {
       return const SizedBox.shrink();
     }
@@ -166,6 +167,9 @@ class AppShellState extends State<AppShell> {
         break;
       case AppSection.tabellaCapi:
         body = CapiTableScreen(clientId: _activeClientId);
+        break;
+      case AppSection.tabellaClienti: // <--- NUOVO CASE
+        body = const ClientTableScreen();
         break;
       case AppSection.settings:
         body = const SettingsScreen();

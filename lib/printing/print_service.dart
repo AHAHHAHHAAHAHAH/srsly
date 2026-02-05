@@ -237,7 +237,7 @@ class PrintService {
                   children: [
                       pw.Text('Dati: ', style: style),
                       pw.Expanded(
-                        child: pw.Text('${data.clientName}', style: styleBold, maxLines: 1, overflow: pw.TextOverflow.clip),
+                        child: pw.Text('${data.clientName} ${data.clientPhone}', style: styleBold, maxLines: 1, overflow: pw.TextOverflow.clip),
                       )
                   ]
                 ),

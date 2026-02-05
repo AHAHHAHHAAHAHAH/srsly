@@ -70,14 +70,19 @@ class _CapiTableScreenState extends State<CapiTableScreen> {
           // =======================
           // 1. BARRA ALFABETO (Ripristinata)
           // =======================
+      // =======================
+          // 1. BARRA ALFABETO + TOTALE
+          // =======================
           Container(
             height: 70,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: _headerBoxDecoration(),
+            decoration: _headerBoxDecoration(), // Usa lo stile definito nel file
             child: Row(
               children: [
                 const Icon(Icons.filter_alt, color: Colors.black87),
                 const SizedBox(width: 16),
+                
+                // LISTA LETTERE SCORREVOLE
                 Expanded(
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
@@ -110,6 +115,32 @@ class _CapiTableScreenState extends State<CapiTableScreen> {
                     },
                   ),
                 ),
+
+                // --- NUOVO PEZZO: TOTALE CAPI ---
+                const SizedBox(width: 16),
+                StreamBuilder<QuerySnapshot>(
+                  stream: _garmentService.searchGarments(''), // Conta tutti i capi
+                  builder: (context, snapshot) {
+                    final count = snapshot.data?.docs.length ?? 0;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Text(
+                        'Capi totali: $count',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                // --------------------------------
               ],
             ),
           ),
@@ -177,7 +208,7 @@ class _CapiTableScreenState extends State<CapiTableScreen> {
                               children: const [
                                 Expanded(flex: 4, child: Text('NOME CAPO', style: _headerStyle)),
                                 SizedBox(width: 12),
-                                Expanded(flex: 2, child: Text('DATA AGGIUNTA', style: _headerStyle)),
+                                Expanded(flex: 2, child: Text('AGGIUNTO IL', style: _headerStyle)),
                                 SizedBox(width: 12),
                                 Expanded(flex: 3, child: Text('OPERAZIONE', style: _headerStyle)),
                                 SizedBox(width: 12),
@@ -374,7 +405,7 @@ class _GarmentRowState extends State<_GarmentRow> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminare Capo?'),
-        content: Text('Sei sicuro di voler eliminare "$_originalName"?'),
+        content: Text('Sei sicuro di voler eliminare "$_originalName"?\nQuesta azione è irreversibile.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
           ElevatedButton(
