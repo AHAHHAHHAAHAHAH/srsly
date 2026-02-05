@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../services/garment_service.dart';
 import '../services/operation_type_service.dart';
-
+///////AHAHAHAHAHHAHAHAHAAHHAHAHAHHA
 class CapiTableScreen extends StatefulWidget {
   final String? clientId;
   const CapiTableScreen({super.key, required this.clientId});
