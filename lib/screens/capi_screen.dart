@@ -172,6 +172,8 @@ class _CapiScreenState extends State<CapiScreen> {
     setState(() => _typesLoaded = true);
   }
 
+  // MODIFICATO: Non serve più fetchare prezzo qui, lo facciamo quando seleziona
+  // Ma la logica di filtro è nel build
   Future<void> _onTypeSelected(_PendingOp op, String typeId) async {
     final prices = await _garmentService.getPricesForGarment(op.garmentId);
     final price = prices[typeId] ?? 0;
@@ -300,24 +302,36 @@ class _CapiScreenState extends State<CapiScreen> {
     required String name,
     required double basePrice,
   }) {
+    final op = _PendingOp(
+      garmentId: id,
+      garmentName: name,
+      unitPrice: basePrice,
+      currentQty: 1,
+      qtyCtrl: TextEditingController(text: '1'),
+      priceCtrl: TextEditingController(text: _fmtEuro(basePrice * 1)),
+      priceManuallyEdited: false,
+      typeId: null,
+      typeName: '',
+      releaseDate: DateTime.now(),
+      pickupDate: DateTime.now().add(const Duration(days: 1)),
+      pickupSlot: 'Mattina',
+      hScrollCtrl: ScrollController(),
+      // Inizializza liste vuote per la logica "caricamento"
+      validOpIds: [],
+      isOpsLoaded: false,
+    );
+
     setState(() {
-      _pending.add(
-        _PendingOp(
-          garmentId: id,
-          garmentName: name,
-          unitPrice: basePrice,
-          currentQty: 1,
-          qtyCtrl: TextEditingController(text: '1'),
-          priceCtrl: TextEditingController(text: _fmtEuro(basePrice * 1)),
-          priceManuallyEdited: false,
-          typeId: null,
-          typeName: '',
-          releaseDate: DateTime.now(),
-          pickupDate: DateTime.now().add(const Duration(days: 1)),
-          pickupSlot: 'Mattina',
-          hScrollCtrl: ScrollController(),
-        ),
-      );
+      _pending.add(op);
+    });
+
+    // FETCH DEI PREZZI SPECIFICI PER QUESTO CAPO
+    _garmentService.getPricesForGarment(id).then((pricesMap) {
+      if (!mounted) return;
+      setState(() {
+        op.validOpIds = pricesMap.keys.toList();
+        op.isOpsLoaded = true;
+      });
     });
   }
 
@@ -645,8 +659,8 @@ class _CapiScreenState extends State<CapiScreen> {
         pickupDate: previewData.pickupDate,
         pickupSlot: previewData.pickupSlot,
         items: previewData.items,
-        deposit: depositCopy,
-        isPaid: isPaidCopy,
+        deposit: previewData.deposit,
+        isPaid: previewData.isPaid,
         total: totalCopy,
         companyName: companyName,
         ownerFullName: ownerFullName,
@@ -896,6 +910,17 @@ class _CapiScreenState extends State<CapiScreen> {
                             itemBuilder: (context, i) {
                               final op = _pending[i];
 
+                              // --- LOGICA FILTRO TENDINA ---
+                              // Se ancora stiamo caricando i prezzi, mostra loader o vuoto
+                              // Se caricato e lista vuota -> Mostra TUTTI (per permettere selezione su nuovi capi)
+                              // Se caricato e lista piena -> Mostra SOLO quelli validi
+                              
+                              final List<Map<String, String>> visibleTypes = (!op.isOpsLoaded) 
+                                  ? [] 
+                                  : (op.validOpIds.isEmpty 
+                                      ? _operationTypes 
+                                      : _operationTypes.where((t) => op.validOpIds.contains(t['id'])).toList());
+
                               return GestureDetector(
                                 behavior: HitTestBehavior.translucent,
                                 onHorizontalDragStart: (details) {
@@ -1041,7 +1066,7 @@ class _CapiScreenState extends State<CapiScreen> {
                                                   CrossAxisAlignment.start,
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                // 1) Loading types
+                                                // 1) Loading types globali
                                                 if (!_typesLoaded)
                                                   const SizedBox(
                                                     height: 24,
@@ -1050,10 +1075,14 @@ class _CapiScreenState extends State<CapiScreen> {
                                                           CircularProgressIndicator(
                                                               strokeWidth: 2),
                                                     ),
-                                                  ),
+                                                  )
+                                                
+                                                // 2) Loading tipi specifici del capo (Nuovo)
+                                                else if (!op.isOpsLoaded)
+                                                   const SizedBox(height: 24, width: 24, child: Padding(padding: EdgeInsets.all(4), child: CircularProgressIndicator(strokeWidth: 2)))
 
-                                                // 2) Dropdown (solo se typesLoaded)
-                                                if (_typesLoaded)
+                                                // 3) Dropdown
+                                                else
                                                   DropdownButtonHideUnderline(
                                                     child:
                                                         DropdownButton<String>(
@@ -1061,7 +1090,7 @@ class _CapiScreenState extends State<CapiScreen> {
                                                           '${op.garmentId}_${op.typeId}'),
                                                       value: (op.typeId !=
                                                                   null &&
-                                                              _operationTypes.any(
+                                                              visibleTypes.any(
                                                                   (t) =>
                                                                       t['id'] ==
                                                                       op.typeId))
@@ -1070,7 +1099,7 @@ class _CapiScreenState extends State<CapiScreen> {
                                                       hint: const Text(
                                                           'Seleziona'),
                                                       isDense: true,
-                                                      items: _operationTypes
+                                                      items: visibleTypes
                                                           .map((t) {
                                                         return DropdownMenuItem<
                                                             String>(
@@ -1145,7 +1174,7 @@ class _CapiScreenState extends State<CapiScreen> {
                                                     padding: EdgeInsets.only(
                                                         top: 6),
                                                     child: Text(
-                                                      'Nessun tipo trovato (operation_types vuoto o non leggibile)',
+                                                      'Nessun tipo trovato',
                                                       style: TextStyle(
                                                         color: Colors.red,
                                                         fontSize: 12,
@@ -1189,6 +1218,7 @@ class _CapiScreenState extends State<CapiScreen> {
                                                       lastDate: DateTime.now()
                                                           .add(const Duration(
                                                               days: 365)),
+                                                      locale: const Locale('it', 'IT'), // <--- CORREZIONE: ITALIANO QUI
                                                     );
                                                     if (picked == null) return;
 
@@ -1432,6 +1462,10 @@ class _PendingOp {
 
   int currentQty;
 
+  // --- NUOVI CAMPI PER LA LOGICA DI CARICAMENTO ---
+  List<String> validOpIds;
+  bool isOpsLoaded;
+
   _PendingOp({
     required this.garmentId,
     required this.garmentName,
@@ -1447,6 +1481,8 @@ class _PendingOp {
     required this.pickupSlot,
     required this.currentQty,
     this.manualUnitPrice,
+    required this.validOpIds,
+    required this.isOpsLoaded,
   });
 
   void dispose() {
